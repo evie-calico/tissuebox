@@ -293,7 +293,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "tissue"
+name = "tissuebox"
 version = "0.1.0"
 dependencies = [
  "clap",
