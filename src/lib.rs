@@ -426,10 +426,6 @@ pub mod tui {
 									}
 								}
 								KeyCode::Char('q') => return Ok(()),
-								KeyCode::Char('Q') => {
-									ratatui::restore();
-									std::process::exit(0);
-								}
 								_ => Mode::Normal,
 							},
 							m @ Mode::Help => {
