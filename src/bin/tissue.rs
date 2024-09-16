@@ -19,10 +19,12 @@ enum Command {
 	/// Append to an existing tissue's description by index
 	Describe(Describe),
 	/// Add a tag to an existing tissue by index
-	Tag(Describe),
+	Tag(Tag),
 	/// Delete an existing tissue by index
 	Remove(Remove),
+	/// Commit a tissue to git by index
 	Commit(Index),
+	/// Publish a tissue to GitHub by index
 	Publish(Index),
 }
 
@@ -45,7 +47,7 @@ struct List {
 
 #[derive(Subcommand)]
 enum WhichList {
-	/// List title,
+	/// List title
 	Title,
 	/// List descriptions
 	Description(OptionIndex),
@@ -63,9 +65,15 @@ struct Add {
 
 #[derive(Args)]
 struct Describe {
-	/// Description of tissue
-	with: String,
+	description: String,
 	/// Index of tissue to describe
+	index: usize,
+}
+
+#[derive(Args)]
+struct Tag {
+	tag: String,
+	/// Index of tissue to tag
 	index: usize,
 }
 
@@ -83,11 +91,11 @@ enum WhichRemove {
 	/// Remove a description
 	Description(Index),
 	/// Remove a tag
-	Tag(Tag),
+	Tag(TagName),
 }
 
 #[derive(Args)]
-struct Tag {
+struct TagName {
 	tag: String,
 }
 
@@ -169,11 +177,11 @@ fn main() {
 			which: Some(_),
 		})) => panic!("list subcommand specified without index"),
 		Some(Command::Add(Add { title })) => tissue_box.create(title),
-		Some(Command::Describe(Describe { index, with })) => {
-			try_get_mut(&mut tissue_box, index).describe(with);
+		Some(Command::Describe(Describe { index, description })) => {
+			try_get_mut(&mut tissue_box, index).describe(description);
 		}
-		Some(Command::Tag(Describe { index, with })) => {
-			try_get_mut(&mut tissue_box, index).tag(with);
+		Some(Command::Tag(Tag { index, tag })) => {
+			try_get_mut(&mut tissue_box, index).tag(tag);
 		}
 		Some(Command::Remove(Remove { index, which: None })) => {
 			if tissue_box.remove(index).is_none() {
@@ -194,7 +202,7 @@ fn main() {
 		}
 		Some(Command::Remove(Remove {
 			index,
-			which: Some(WhichRemove::Tag(Tag { tag })),
+			which: Some(WhichRemove::Tag(TagName { tag })),
 		})) => {
 			if !try_get_mut(&mut tissue_box, index).tags.remove(&tag) {
 				error!("no tag named {tag}");
