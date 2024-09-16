@@ -137,10 +137,6 @@ pub mod tui {
 							"escribe".into(),
 							" t".red().bold(),
 							"ag".into(),
-							" c".red().bold(),
-							"opy".into(),
-							" P".red().bold(),
-							"ublish".into(),
 							" r".red().bold(),
 							"emove".into(),
 							" q".red().bold(),
@@ -228,6 +224,19 @@ pub mod tui {
 				let mut body = Text::default();
 				match &mode {
 					Mode::FailedPublish(reason) => body.lines.push(reason.clone().into()),
+					Mode::Help => {
+						body.lines.push("Welcome to tissuebox!".blue().into());
+						body.lines.push("".into());
+						body.lines.push("Basic Commands".red().into());
+						body.lines.push(" a (add): Create a new tissue under the given name".into());
+						body.lines.push(" d (describe): Append a description to the selected tissue".into());
+						body.lines.push(" t (tag): Assign a tag to the selected tissue".into());
+						body.lines.push(" r (remove): delete the selected issue".into());
+						body.lines.push("".into());
+						body.lines.push("Output commands".red().into());
+						body.lines.push(" c (copy): Copy the title or description of the selected tissue to the clipboard".into());
+						body.lines.push(" P (publish): Publish the selected issue to GitHub. Requires the `gh` command.".into());
+					}
 					_ => {
 						for (i, tissue) in tissue_box.tissues.iter().enumerate() {
 							let mut title: Line = tissue.title.clone().into();
