@@ -13,7 +13,7 @@ struct Cli {
 #[derive(Subcommand)]
 enum Command {
 	/// Display formatted tissuebox
-	List,
+	List(List),
 	/// Create new tissue
 	Add(Add),
 	/// Append to an existing tissue's description by index
@@ -29,6 +29,28 @@ enum Command {
 #[derive(Args)]
 struct Index {
 	index: usize,
+}
+
+#[derive(Args)]
+struct OptionIndex {
+	index: Option<usize>,
+}
+
+#[derive(Args)]
+struct List {
+	index: Option<usize>,
+	#[command(subcommand)]
+	which: Option<WhichList>,
+}
+
+#[derive(Subcommand)]
+enum WhichList {
+	/// List title,
+	Title,
+	/// List descriptions
+	Description(OptionIndex),
+	/// List all tags
+	Tags,
 }
 
 #[derive(Args)]
@@ -61,11 +83,11 @@ enum WhichRemove {
 	/// Remove a description
 	Description(Index),
 	/// Remove a tag
-	Tag(RemoveTag),
+	Tag(Tag),
 }
 
 #[derive(Args)]
-struct RemoveTag {
+struct Tag {
 	tag: String,
 }
 
@@ -104,7 +126,57 @@ fn main() {
 
 	// Update tissue box
 	match cli.command {
-		Some(Command::List) => print!("{tissue_box}"),
+		Some(Command::List(List {
+			index: None,
+			which: None,
+		})) => print!("{tissue_box}"),
+		Some(Command::List(List {
+			index: Some(index),
+			which: None,
+		})) => print!("{}", try_get(&tissue_box, index)),
+		Some(Command::List(List {
+			index: Some(index),
+			which: Some(WhichList::Title),
+		})) => {
+			println!("{}", try_get(&tissue_box, index).title);
+		}
+		Some(Command::List(List {
+			index: Some(index),
+			which: Some(WhichList::Description(OptionIndex { index: None })),
+		})) => {
+			println!("{}", try_get(&tissue_box, index).description.join("\n"));
+		}
+		Some(Command::List(List {
+			index: Some(tissue_index),
+			which: Some(WhichList::Description(OptionIndex { index: Some(index) })),
+		})) => println!(
+			"{}",
+			try_get(&tissue_box, tissue_index)
+				.description
+				.get(index)
+				.unwrap_or_else(|| {
+					error!("no description with index {index} on tissue {index}");
+					exit(1);
+				})
+		),
+		Some(Command::List(List {
+			index: Some(index),
+			which: Some(WhichList::Tags),
+		})) => {
+			let tissue = try_get(&tissue_box, index);
+			let mut iter = tissue.tags.iter();
+			if let Some(first) = iter.next() {
+				print!("{first}");
+				for next in iter {
+					print!(", {next}");
+				}
+				println!();
+			}
+		}
+		Some(Command::List(List {
+			index: None,
+			which: Some(_),
+		})) => panic!("list subcommand specified without index"),
 		Some(Command::Add(Add { title })) => tissue_box.create(title),
 		Some(Command::Describe(Describe { index, with })) => {
 			try_get_mut(&mut tissue_box, index).describe(with);
@@ -131,7 +203,7 @@ fn main() {
 		}
 		Some(Command::Remove(Remove {
 			index,
-			which: Some(WhichRemove::Tag(RemoveTag { tag })),
+			which: Some(WhichRemove::Tag(Tag { tag })),
 		})) => {
 			if !try_get_mut(&mut tissue_box, index).tags.remove(&tag) {
 				error!("no tag named {tag}");
