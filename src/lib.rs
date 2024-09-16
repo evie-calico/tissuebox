@@ -110,6 +110,8 @@ impl std::fmt::Display for Tissue {
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct Box {
 	#[serde(default)]
+	recycle_bin: Vec<Tissue>,
+	#[serde(default)]
 	tissues: Vec<Tissue>,
 }
 
@@ -135,7 +137,9 @@ impl Box {
 	#[must_use]
 	pub fn remove(&mut self, index: usize) -> Option<Tissue> {
 		self.tissues.get(index)?;
-		Some(self.tissues.remove(index))
+		let tissue = self.tissues.remove(index);
+		self.recycle_bin.push(tissue.clone());
+		Some(tissue)
 	}
 
 	pub fn get(&self, index: usize) -> Option<&Tissue> {
@@ -483,7 +487,7 @@ pub mod tui {
 							},
 							Mode::Remove => match key.code {
 								KeyCode::Char('T') => {
-									tissue_box.tissues.remove(index);
+									let _ = tissue_box.remove(index);
 									last_error = tissue_box.save(save_path);
 									Mode::Normal
 								}
