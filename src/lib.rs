@@ -115,6 +115,8 @@ pub mod tui {
 			Copy,
 			Publish,
 			FailedPublish(String),
+			Commit,
+			FailedCommit(String),
 			Remove,
 			RemoveDescription(usize),
 			RemoveTag(String),
@@ -186,6 +188,20 @@ pub mod tui {
 							" Publish Failed ".blue().bold(),
 						]))
 					}
+					Mode::Commit => {
+						Title::from(Line::from(vec![
+							" Really Commit?:".blue().bold(),
+							" y".red().bold(),
+							"es".into(),
+							" N".red().bold(),
+							"o ".into(),
+						]))
+					}
+					Mode::FailedCommit(_) => {
+						Title::from(Line::from(vec![
+							" Commit Failed ".blue().bold(),
+						]))
+					}
 					Mode::Remove => {
 						Title::from(Line::from(vec![
 							" Remove what?:".blue().bold(),
@@ -223,7 +239,7 @@ pub mod tui {
 				frame.render_widget(paper, Rect { height: 4, ..area });
 				let mut body = Text::default();
 				match &mode {
-					Mode::FailedPublish(reason) => body.lines.push(reason.clone().into()),
+					Mode::FailedPublish(reason) | Mode::FailedCommit(reason) => body.lines.push(reason.clone().into()),
 					Mode::Help => {
 						body.lines.push("Welcome to tissuebox!".blue().into());
 						body.lines.push("".into());
@@ -235,6 +251,9 @@ pub mod tui {
 						body.lines.push("".into());
 						body.lines.push("Output commands".red().into());
 						body.lines.push(" c (copy): Copy the title or description of the selected tissue to the clipboard".into());
+						body.lines.push(" C (commit): Add all files to the git index and commit.".into());
+						body.lines.push("             Uses the selected tissue's title as the message".into());
+						body.lines.push("             Equivalent to `git add --all && git commit -m {title}`".into());
 						body.lines.push(" P (publish): Publish the selected issue to GitHub. Requires the `gh` command.".into());
 					}
 					_ => {
@@ -288,13 +307,16 @@ pub mod tui {
 								KeyCode::Char('d') => Mode::Describe(String::new()),
 								KeyCode::Char('t') => Mode::Tag(String::new()),
 								KeyCode::Char('c') => Mode::Copy,
+								KeyCode::Char('C') => Mode::Commit,
 								KeyCode::Char('P') => Mode::Publish,
 								KeyCode::Char('r') => Mode::Remove,
 								KeyCode::Char('q') => return Ok(()),
 								KeyCode::Char('Q') => panic!("force quit"),
 								_ => Mode::Normal,
 							},
-							m @ Mode::Help | m @ Mode::FailedPublish(_) => {
+							m @ Mode::Help
+							| m @ Mode::FailedPublish(_)
+							| m @ Mode::FailedCommit(_) => {
 								if let KeyCode::Char(_) = key.code {
 									Mode::Normal
 								} else {
@@ -392,6 +414,54 @@ pub mod tui {
 								}
 								KeyCode::Char('n') | KeyCode::Char('N') => Mode::Normal,
 								_ => Mode::Publish,
+							},
+							Mode::Commit => match key.code {
+								KeyCode::Char('y') | KeyCode::Char('Y') => {
+									let tissue = &tissue_box.tissues[index];
+									match std::process::Command::new("git")
+										.arg("add")
+										.arg("--all")
+										.output()
+									{
+										Ok(output) => {
+											if output.status.success() {
+												match std::process::Command::new("git")
+													.arg("commit")
+													.arg("-m")
+													.arg(&tissue.title)
+													.output()
+												{
+													Ok(output) => {
+														if output.status.success() {
+															tissue_box.tissues.remove(index);
+															Mode::Normal
+														} else {
+															Mode::FailedCommit(
+																String::from_utf8_lossy(
+																	&output.stderr,
+																)
+																.to_string(),
+															)
+														}
+													}
+													Err(msg) => Mode::FailedCommit(format!(
+														"failed to execute `git add`: {msg}"
+													)),
+												}
+											} else {
+												Mode::FailedCommit(
+													String::from_utf8_lossy(&output.stderr)
+														.to_string(),
+												)
+											}
+										}
+										Err(msg) => Mode::FailedCommit(format!(
+											"failed to execute `git add`: {msg}"
+										)),
+									}
+								}
+								KeyCode::Char('n') | KeyCode::Char('N') => Mode::Normal,
+								_ => Mode::Commit,
 							},
 							Mode::Remove => match key.code {
 								KeyCode::Char('T') => {
