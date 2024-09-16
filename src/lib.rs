@@ -142,6 +142,12 @@ impl Box {
 		Some(tissue)
 	}
 
+	pub fn restore(&mut self, index: usize) -> Option<&Tissue> {
+		self.recycle_bin.get(index)?;
+		self.tissues.push(self.recycle_bin.remove(index));
+		self.tissues.last()
+	}
+
 	pub fn get(&self, index: usize) -> Option<&Tissue> {
 		self.tissues.get(index)
 	}
@@ -212,6 +218,7 @@ pub mod tui {
 			Remove,
 			RemoveDescription(usize),
 			RemoveTag(String),
+			Restore(usize),
 		}
 		let mut index = 0usize;
 		let mut mode = Mode::Normal;
@@ -312,6 +319,9 @@ pub mod tui {
 						tag.into(),
 						"_ ".into(),
 					])),
+					Mode::Restore(_) => Title::from(Line::from(vec![
+						" Select tissue and restore ".blue().bold(),
+					])),
 				};
 				let block = Block::bordered()
 					.title(title.alignment(Alignment::Center))
@@ -322,6 +332,29 @@ pub mod tui {
 					)
 					.padding(Padding::horizontal(2))
 					.border_set(border::ROUNDED);
+
+				let format_tissues = |body: &mut Text, tissues: &[crate::Tissue]| {
+					for (i, tissue) in tissues.iter().enumerate() {
+						let mut title: Line = tissue.title.clone().into();
+						if let Mode::RemoveDescription(_) = mode {} else if i == index{
+							title = title.black().on_white();
+						};
+						for tag in &tissue.tags {
+							title.spans.push(format!(" ({tag})").magenta());
+						}
+						body.lines.push(title);
+						for (di, description) in tissue.description.iter().enumerate() {
+							if let Mode::RemoveDescription(d_index) = mode {
+								if index == i && d_index == di {
+									body.lines.push(format!("- {description}").black().on_white().into());
+									continue;
+								}
+							}
+							body.lines.push(format!("- {description}").dark_gray().into());
+						}
+					}
+				};
+				
 				let mut body = Text::default();
 				match &mode {
 					Mode::Help => {
@@ -332,6 +365,7 @@ pub mod tui {
 						body.lines.push(" d (describe): Append a description to the selected tissue".into());
 						body.lines.push(" t (tag): Assign a tag to the selected tissue".into());
 						body.lines.push(" r (remove): Delete the selected issue".into());
+						body.lines.push(" R (restore): Restore a deleted tissue".into());
 						body.lines.push("".into());
 						body.lines.push("Output commands".red().into());
 						body.lines.push(" c (copy): Copy the title or description of the selected tissue to the clipboard".into());
@@ -340,26 +374,11 @@ pub mod tui {
 						body.lines.push("             Equivalent to `git add --all && git commit -m {title}`".into());
 						body.lines.push(" P (publish): Publish the selected issue to GitHub. Requires the `gh` command.".into());
 					}
+					Mode::Restore(_) => {
+						format_tissues(&mut body, &tissue_box.recycle_bin);
+					}
 					_ => {
-						for (i, tissue) in tissue_box.tissues.iter().enumerate() {
-							let mut title: Line = tissue.title.clone().into();
-							if let Mode::RemoveDescription(_) = mode {} else if i == index{
-								title = title.black().on_white();
-							};
-							for tag in &tissue.tags {
-								title.spans.push(format!(" ({tag})").magenta());
-							}
-							body.lines.push(title);
-							for (i, description) in tissue.description.iter().enumerate() {
-								if let Mode::RemoveDescription(index) = mode {
-									if index == i {
-										body.lines.push(format!("- {description}").black().on_white().into());
-										continue;
-									}
-								}
-								body.lines.push(format!("- {description}").dark_gray().into());
-							}
-						}
+						format_tissues(&mut body, &tissue_box.tissues);
 					}
 				}
 				frame.render_widget(Paragraph::new(body).block(block), Rect { y: area.y + 4, height: area.height - 5, ..area});
@@ -399,13 +418,16 @@ pub mod tui {
 								KeyCode::Char('C') => Mode::Commit,
 								KeyCode::Char('P') => Mode::Publish,
 								KeyCode::Char('r') => Mode::Remove,
+								KeyCode::Char('R') => {
+									if tissue_box.recycle_bin.is_empty() {
+										Mode::Normal
+									} else {
+										Mode::Restore(0)
+									}
+								}
 								KeyCode::Char('q') => return Ok(()),
 								KeyCode::Char('Q') => {
-									let _ = crossterm::terminal::disable_raw_mode();
-									let _ = crossterm::execute!(
-										std::io::stdout(),
-										crossterm::terminal::LeaveAlternateScreen
-									);
+									ratatui::restore();
 									std::process::exit(0);
 								}
 								_ => Mode::Normal,
@@ -531,6 +553,24 @@ pub mod tui {
 									Mode::RemoveTag(tag)
 								}
 							}
+							Mode::Restore(index) => match key.code {
+								KeyCode::Char('k')
+								| KeyCode::Char('h')
+								| KeyCode::Up
+								| KeyCode::Left => Mode::Restore(index.saturating_sub(1)),
+								KeyCode::Char('j')
+								| KeyCode::Char('l')
+								| KeyCode::Down
+								| KeyCode::Right => Mode::Restore(
+									(index + 1).min(tissue_box.recycle_bin.len() - 1),
+								),
+								KeyCode::Enter => {
+									tissue_box.restore(index);
+									last_error = tissue_box.save(save_path);
+									Mode::Normal
+								}
+								_ => Mode::Restore(index),
+							},
 						}
 					}
 				}
