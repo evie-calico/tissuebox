@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::{collections::HashSet, io};
 
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct Tissue {
@@ -7,6 +7,81 @@ pub struct Tissue {
 	pub description: Vec<String>,
 	#[serde(default)]
 	pub tags: HashSet<String>,
+}
+
+impl Tissue {
+	pub fn describe(&mut self, description: String) {
+		self.description.push(description);
+	}
+
+	pub fn tag(&mut self, tag: String) {
+		self.tags.insert(tag);
+	}
+
+	pub fn publish(&self) -> io::Result<()> {
+		let output = std::process::Command::new("gh")
+			.args(["label", "list"])
+			.output()?;
+		if output.status.success() {
+			let labels = String::from_utf8_lossy(&output.stdout);
+			let labels = labels
+				.lines()
+				.map(|s| s.split_once('\t').unwrap_or_default().0)
+				.collect::<Vec<_>>();
+			for tag in &self.tags {
+				if !labels.contains(&tag.as_str()) {
+					let output = std::process::Command::new("gh")
+						.args(["label", "create", tag])
+						.output()?;
+					if !output.status.success() {
+						return Err(io::Error::other(String::from_utf8_lossy(&output.stderr)));
+					}
+				}
+			}
+		} else {
+			return Err(io::Error::other(String::from_utf8_lossy(&output.stderr)));
+		}
+
+		let output = std::process::Command::new("gh")
+			.args(["issue", "create"])
+			.args(["--title", &self.title])
+			.args(["--body", &self.description.join("\n")])
+			.args([
+				"--label",
+				&self.tags.iter().fold(String::new(), |a, b| a + "\n" + b),
+			])
+			.output()?;
+		if output.status.success() {
+			Ok(())
+		} else {
+			Err(io::Error::other(String::from_utf8_lossy(&output.stderr)))
+		}
+	}
+
+	pub fn commit(&self) -> io::Result<()> {
+		let output = std::process::Command::new("git")
+			.arg("add")
+			.arg("--all")
+			.output()?;
+		if output.status.success() {
+			let output = std::process::Command::new("git")
+				.arg("commit")
+				.arg("-m")
+				.arg(&self.title)
+				.output()?;
+			if output.status.success() {
+				Ok(())
+			} else {
+				Err(io::Error::other(
+					String::from_utf8_lossy(&output.stderr).to_string(),
+				))
+			}
+		} else {
+			Err(io::Error::other(
+				String::from_utf8_lossy(&output.stderr).to_string(),
+			))
+		}
+	}
 }
 
 impl std::fmt::Display for Tissue {
@@ -247,7 +322,7 @@ pub mod tui {
 						body.lines.push(" a (add): Create a new tissue under the given name".into());
 						body.lines.push(" d (describe): Append a description to the selected tissue".into());
 						body.lines.push(" t (tag): Assign a tag to the selected tissue".into());
-						body.lines.push(" r (remove): delete the selected issue".into());
+						body.lines.push(" r (remove): Delete the selected issue".into());
 						body.lines.push("".into());
 						body.lines.push("Output commands".red().into());
 						body.lines.push(" c (copy): Copy the title or description of the selected tissue to the clipboard".into());
@@ -311,7 +386,14 @@ pub mod tui {
 								KeyCode::Char('P') => Mode::Publish,
 								KeyCode::Char('r') => Mode::Remove,
 								KeyCode::Char('q') => return Ok(()),
-								KeyCode::Char('Q') => panic!("force quit"),
+								KeyCode::Char('Q') => {
+									let _ = crossterm::terminal::disable_raw_mode();
+									let _ = crossterm::execute!(
+										std::io::stdout(),
+										crossterm::terminal::LeaveAlternateScreen
+									);
+									std::process::exit(0);
+								}
 								_ => Mode::Normal,
 							},
 							m @ Mode::Help
@@ -325,8 +407,6 @@ pub mod tui {
 							}
 							Mode::Add(mut title) => {
 								if gather_line(&mut title, key.code) {
-									// This clone is uneccessary.
-									// A move should be possible since it's destroyed imeediately afterwards anyways.
 									tissue_box.create(title);
 									Mode::Normal
 								} else {
@@ -335,7 +415,7 @@ pub mod tui {
 							}
 							Mode::Describe(mut description) => {
 								if gather_line(&mut description, key.code) {
-									tissue_box.tissues[index].description.push(description);
+									tissue_box.tissues[index].describe(description);
 									Mode::Normal
 								} else {
 									Mode::Describe(description)
@@ -343,7 +423,7 @@ pub mod tui {
 							}
 							Mode::Tag(mut tag) => {
 								if gather_line(&mut tag, key.code) {
-									tissue_box.tissues[index].tags.insert(tag);
+									tissue_box.tissues[index].tag(tag);
 									Mode::Normal
 								} else {
 									Mode::Tag(tag)
@@ -358,58 +438,9 @@ pub mod tui {
 							Mode::Publish => match key.code {
 								KeyCode::Char('y') | KeyCode::Char('Y') => {
 									let tissue = &tissue_box.tissues[index];
-									if let Ok(output) = std::process::Command::new("gh")
-										.arg("label")
-										.arg("list")
-										.output()
-									{
-										if output.status.success() {
-											let labels = String::from_utf8_lossy(&output.stdout);
-											let labels = labels
-												.lines()
-												.map(|s| s.split_once('\t').unwrap_or_default().0)
-												.collect::<Vec<_>>();
-											for tag in &tissue.tags {
-												if !labels.contains(&tag.as_str()) {
-													let _ = std::process::Command::new("gh")
-														.arg("label")
-														.arg("create")
-														.arg(tag)
-														.output();
-												}
-											}
-										}
-									}
-									match std::process::Command::new("gh")
-										.arg("issue")
-										.arg("create")
-										.arg("--title")
-										.arg(&tissue.title)
-										.arg("--body")
-										.arg(tissue.description.join("\n"))
-										.arg("--label")
-										.arg(
-											tissue
-												.tags
-												.iter()
-												.fold(String::new(), |a, b| a + "\n" + b),
-										)
-										.output()
-									{
-										Ok(output) => {
-											if output.status.success() {
-												tissue_box.tissues.remove(index);
-												Mode::Normal
-											} else {
-												Mode::FailedPublish(format!(
-													"failed to publish issue: {}",
-													String::from_utf8_lossy(&output.stderr)
-												))
-											}
-										}
-										Err(msg) => Mode::FailedPublish(format!(
-											"failed to execute `gh`: {msg}"
-										)),
+									match tissue.publish() {
+										Ok(()) => Mode::Normal,
+										Err(msg) => Mode::FailedPublish(msg.to_string()),
 									}
 								}
 								KeyCode::Char('n') | KeyCode::Char('N') => Mode::Normal,
@@ -417,47 +448,12 @@ pub mod tui {
 							},
 							Mode::Commit => match key.code {
 								KeyCode::Char('y') | KeyCode::Char('Y') => {
-									let tissue = &tissue_box.tissues[index];
-									match std::process::Command::new("git")
-										.arg("add")
-										.arg("--all")
-										.output()
-									{
-										Ok(output) => {
-											if output.status.success() {
-												match std::process::Command::new("git")
-													.arg("commit")
-													.arg("-m")
-													.arg(&tissue.title)
-													.output()
-												{
-													Ok(output) => {
-														if output.status.success() {
-															tissue_box.tissues.remove(index);
-															Mode::Normal
-														} else {
-															Mode::FailedCommit(
-																String::from_utf8_lossy(
-																	&output.stderr,
-																)
-																.to_string(),
-															)
-														}
-													}
-													Err(msg) => Mode::FailedCommit(format!(
-														"failed to execute `git add`: {msg}"
-													)),
-												}
-											} else {
-												Mode::FailedCommit(
-													String::from_utf8_lossy(&output.stderr)
-														.to_string(),
-												)
-											}
+									match tissue_box.tissues[index].commit() {
+										Ok(()) => {
+											let _ = tissue_box.remove(index);
+											Mode::Normal
 										}
-										Err(msg) => Mode::FailedCommit(format!(
-											"failed to execute `git add`: {msg}"
-										)),
+										Err(msg) => Mode::FailedCommit(msg.to_string()),
 									}
 								}
 								KeyCode::Char('n') | KeyCode::Char('N') => Mode::Normal,
