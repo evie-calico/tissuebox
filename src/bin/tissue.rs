@@ -38,10 +38,10 @@ struct AddArgs {
 
 #[derive(Args)]
 struct DescribeArgs {
-	// index of tissue to describe
-	index: usize,
 	// description of tissue
 	with: String,
+	// index of tissue to describe
+	index: usize,
 }
 
 fn main() {
