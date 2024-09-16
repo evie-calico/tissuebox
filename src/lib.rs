@@ -1,4 +1,4 @@
-use std::{collections::HashSet, io};
+use std::{collections::HashSet, fs, io, path::Path};
 
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct Tissue {
@@ -114,6 +114,17 @@ pub struct Box {
 }
 
 impl Box {
+	pub fn open(path: impl AsRef<Path>) -> io::Result<Self> {
+		toml::from_str(&fs::read_to_string(path.as_ref())?).map_err(io::Error::other)
+	}
+
+	pub fn save(&self, path: impl AsRef<Path>) -> io::Result<()> {
+		fs::write(
+			path.as_ref(),
+			toml::to_string(self).map_err(io::Error::other)?,
+		)
+	}
+
 	pub fn create(&mut self, title: String) {
 		self.tissues.push(Tissue {
 			title,
@@ -158,17 +169,21 @@ pub mod tui {
 		},
 		DefaultTerminal,
 	};
-	use std::io;
+	use std::{io, path::Path};
 
-	pub fn run(tissue_box: &mut crate::Box) -> io::Result<()> {
+	pub fn run(tissue_box: &mut crate::Box, save_path: &Path) -> io::Result<()> {
 		let mut terminal = ratatui::init();
 		terminal.clear()?;
-		let result = tui(terminal, tissue_box);
+		let result = tui(terminal, tissue_box, save_path);
 		ratatui::restore();
 		result
 	}
 
-	fn tui(mut terminal: DefaultTerminal, tissue_box: &mut crate::Box) -> io::Result<()> {
+	fn tui(
+		mut terminal: DefaultTerminal,
+		tissue_box: &mut crate::Box,
+		save_path: &Path,
+	) -> io::Result<()> {
 		fn gather_line(line: &mut String, code: KeyCode) -> bool {
 			match code {
 				KeyCode::Backspace => {
@@ -408,6 +423,7 @@ pub mod tui {
 							Mode::Add(mut title) => {
 								if gather_line(&mut title, key.code) {
 									tissue_box.create(title);
+									tissue_box.save(save_path);
 									Mode::Normal
 								} else {
 									Mode::Add(title)
@@ -416,6 +432,7 @@ pub mod tui {
 							Mode::Describe(mut description) => {
 								if gather_line(&mut description, key.code) {
 									tissue_box.tissues[index].describe(description);
+									tissue_box.save(save_path);
 									Mode::Normal
 								} else {
 									Mode::Describe(description)
@@ -424,6 +441,7 @@ pub mod tui {
 							Mode::Tag(mut tag) => {
 								if gather_line(&mut tag, key.code) {
 									tissue_box.tissues[index].tag(tag);
+									tissue_box.save(save_path);
 									Mode::Normal
 								} else {
 									Mode::Tag(tag)
@@ -439,7 +457,11 @@ pub mod tui {
 								KeyCode::Char('y') | KeyCode::Char('Y') => {
 									let tissue = &tissue_box.tissues[index];
 									match tissue.publish() {
-										Ok(()) => Mode::Normal,
+										Ok(()) => {
+											let _ = tissue_box.remove(index);
+											tissue_box.save(save_path);
+											Mode::Normal
+										}
 										Err(msg) => Mode::FailedPublish(msg.to_string()),
 									}
 								}
@@ -451,6 +473,7 @@ pub mod tui {
 									match tissue_box.tissues[index].commit() {
 										Ok(()) => {
 											let _ = tissue_box.remove(index);
+											tissue_box.save(save_path);
 											Mode::Normal
 										}
 										Err(msg) => Mode::FailedCommit(msg.to_string()),
@@ -462,6 +485,7 @@ pub mod tui {
 							Mode::Remove => match key.code {
 								KeyCode::Char('T') => {
 									tissue_box.tissues.remove(index);
+									tissue_box.save(save_path);
 									Mode::Normal
 								}
 								KeyCode::Char('d') => {
@@ -489,6 +513,7 @@ pub mod tui {
 									),
 									KeyCode::Enter => {
 										tissue.description.remove(i);
+										tissue_box.save(save_path);
 										Mode::Normal
 									}
 									_ => Mode::RemoveDescription(i),
@@ -497,6 +522,7 @@ pub mod tui {
 							Mode::RemoveTag(mut tag) => {
 								if gather_line(&mut tag, key.code) {
 									tissue_box.tissues[index].tags.remove(&tag);
+									tissue_box.save(save_path);
 									Mode::Normal
 								} else {
 									Mode::RemoveTag(tag)

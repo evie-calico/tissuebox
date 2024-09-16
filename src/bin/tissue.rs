@@ -110,17 +110,8 @@ fn try_get_mut(tissue_box: &mut tissuebox::Box, index: usize) -> &mut tissuebox:
 fn main() {
 	tracing_subscriber::fmt::init();
 	let cli = Cli::parse();
-
-	// Load tissue box
-	let tissue_box_toml = fs::read_to_string(&cli.input).unwrap_or_else(|msg| {
-		error!("failed to read {}: {msg}", cli.input.display());
-		exit(1);
-	});
-	let mut tissue_box: tissuebox::Box = toml::from_str(&tissue_box_toml).unwrap_or_else(|msg| {
-		error!(
-			"failed to parse {} as tissue box: {msg}",
-			cli.input.display()
-		);
+	let mut tissue_box = tissuebox::Box::open(&cli.input).unwrap_or_else(|msg| {
+		error!("failed to open {}: {msg}", cli.input.display());
 		exit(1);
 	});
 
@@ -247,19 +238,15 @@ fn main() {
 					original_hook(panic_info);
 				}));
 			}
-			if let Err(msg) = tissuebox::tui::run(&mut tissue_box) {
+			if let Err(msg) = tissuebox::tui::run(&mut tissue_box, &cli.input) {
 				error!("{msg}");
 				exit(1);
 			}
 		}
 	}
 
-	// Save tissue box
-	let tissue_box_toml = toml::to_string(&tissue_box).unwrap_or_else(|msg| {
+	tissue_box.save(&cli.input).unwrap_or_else(|msg| {
 		error!("failed to serialize tissue box: {msg}");
 		exit(1);
-	});
-	fs::write(&cli.input, tissue_box_toml).unwrap_or_else(|msg| {
-		error!("failed to write tissue box: {msg}");
 	});
 }
