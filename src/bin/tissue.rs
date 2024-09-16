@@ -1,5 +1,5 @@
 use clap::{Args, Parser, Subcommand};
-use std::{fs, path::PathBuf, process::exit};
+use std::{path::PathBuf, process::exit};
 use tracing::error;
 
 #[derive(Parser)]

@@ -159,7 +159,7 @@ impl std::fmt::Display for Box {
 pub mod tui {
 	use crossterm::event::{self, KeyCode, KeyEventKind};
 	use ratatui::{
-		layout::{Alignment, Offset, Rect},
+		layout::{Alignment, Rect},
 		style::Stylize,
 		symbols::border,
 		text::{Line, Text},
@@ -204,19 +204,26 @@ pub mod tui {
 			Tag(String),
 			Copy,
 			Publish,
-			FailedPublish(String),
 			Commit,
-			FailedCommit(String),
 			Remove,
 			RemoveDescription(usize),
 			RemoveTag(String),
 		}
 		let mut index = 0usize;
 		let mut mode = Mode::Normal;
+		let mut last_error: io::Result<()> = Ok(());
 		loop {
 			index = index.min(tissue_box.tissues.len() - 1);
 			terminal.draw(|frame| {
 				let area = frame.area();
+
+				// Paper
+				frame.render_widget(Paragraph::new(
+					"  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓\n ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓\n▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓\n▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓\n",
+				)
+				.centered(), Rect { height: 4, ..area });
+
+				// Box
 				let title = Title::from(" Tissue Box ".red().bold());
 				let instructions = match &mode {
 					Mode::Normal => {
@@ -273,11 +280,6 @@ pub mod tui {
 							"o ".into(),
 						]))
 					}
-					Mode::FailedPublish(_) => {
-						Title::from(Line::from(vec![
-							" Publish Failed ".blue().bold(),
-						]))
-					}
 					Mode::Commit => {
 						Title::from(Line::from(vec![
 							" Really Commit?:".blue().bold(),
@@ -285,11 +287,6 @@ pub mod tui {
 							"es".into(),
 							" N".red().bold(),
 							"o ".into(),
-						]))
-					}
-					Mode::FailedCommit(_) => {
-						Title::from(Line::from(vec![
-							" Commit Failed ".blue().bold(),
 						]))
 					}
 					Mode::Remove => {
@@ -321,15 +318,8 @@ pub mod tui {
 					)
 					.padding(Padding::horizontal(2))
 					.border_set(border::ROUNDED);
-
-				let paper = Paragraph::new(
-					"  ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓\n ▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓\n▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓\n▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓▓\n",
-				)
-				.centered();
-				frame.render_widget(paper, Rect { height: 4, ..area });
 				let mut body = Text::default();
 				match &mode {
-					Mode::FailedPublish(reason) | Mode::FailedCommit(reason) => body.lines.push(reason.clone().into()),
 					Mode::Help => {
 						body.lines.push("Welcome to tissuebox!".blue().into());
 						body.lines.push("".into());
@@ -368,7 +358,12 @@ pub mod tui {
 						}
 					}
 				}
-				frame.render_widget(Paragraph::new(body).block(block), area.offset(Offset { x: 0, y: 4 }));
+				frame.render_widget(Paragraph::new(body).block(block), Rect { y: area.y + 4, height: area.height - 5, ..area});
+
+				// Errors
+				if let Err(msg) = &last_error {
+					frame.render_widget(Paragraph::new(msg.to_string().red()), Rect { y: area.y + area.height - 1, height: 1, ..area});
+				}
 			})?;
 
 			if let event::Event::Key(key) = event::read()? {
@@ -411,9 +406,7 @@ pub mod tui {
 								}
 								_ => Mode::Normal,
 							},
-							m @ Mode::Help
-							| m @ Mode::FailedPublish(_)
-							| m @ Mode::FailedCommit(_) => {
+							m @ Mode::Help => {
 								if let KeyCode::Char(_) = key.code {
 									Mode::Normal
 								} else {
@@ -423,7 +416,7 @@ pub mod tui {
 							Mode::Add(mut title) => {
 								if gather_line(&mut title, key.code) {
 									tissue_box.create(title);
-									tissue_box.save(save_path);
+									last_error = tissue_box.save(save_path);
 									Mode::Normal
 								} else {
 									Mode::Add(title)
@@ -432,7 +425,7 @@ pub mod tui {
 							Mode::Describe(mut description) => {
 								if gather_line(&mut description, key.code) {
 									tissue_box.tissues[index].describe(description);
-									tissue_box.save(save_path);
+									last_error = tissue_box.save(save_path);
 									Mode::Normal
 								} else {
 									Mode::Describe(description)
@@ -441,7 +434,7 @@ pub mod tui {
 							Mode::Tag(mut tag) => {
 								if gather_line(&mut tag, key.code) {
 									tissue_box.tissues[index].tag(tag);
-									tissue_box.save(save_path);
+									last_error = tissue_box.save(save_path);
 									Mode::Normal
 								} else {
 									Mode::Tag(tag)
@@ -459,10 +452,13 @@ pub mod tui {
 									match tissue.publish() {
 										Ok(()) => {
 											let _ = tissue_box.remove(index);
-											tissue_box.save(save_path);
+											last_error = tissue_box.save(save_path);
 											Mode::Normal
 										}
-										Err(msg) => Mode::FailedPublish(msg.to_string()),
+										Err(msg) => {
+											last_error = Err(msg);
+											Mode::Normal
+										}
 									}
 								}
 								KeyCode::Char('n') | KeyCode::Char('N') => Mode::Normal,
@@ -473,10 +469,13 @@ pub mod tui {
 									match tissue_box.tissues[index].commit() {
 										Ok(()) => {
 											let _ = tissue_box.remove(index);
-											tissue_box.save(save_path);
+											last_error = tissue_box.save(save_path);
 											Mode::Normal
 										}
-										Err(msg) => Mode::FailedCommit(msg.to_string()),
+										Err(msg) => {
+											last_error = Err(msg);
+											Mode::Normal
+										}
 									}
 								}
 								KeyCode::Char('n') | KeyCode::Char('N') => Mode::Normal,
@@ -485,7 +484,7 @@ pub mod tui {
 							Mode::Remove => match key.code {
 								KeyCode::Char('T') => {
 									tissue_box.tissues.remove(index);
-									tissue_box.save(save_path);
+									last_error = tissue_box.save(save_path);
 									Mode::Normal
 								}
 								KeyCode::Char('d') => {
@@ -513,7 +512,7 @@ pub mod tui {
 									),
 									KeyCode::Enter => {
 										tissue.description.remove(i);
-										tissue_box.save(save_path);
+										last_error = tissue_box.save(save_path);
 										Mode::Normal
 									}
 									_ => Mode::RemoveDescription(i),
@@ -522,7 +521,7 @@ pub mod tui {
 							Mode::RemoveTag(mut tag) => {
 								if gather_line(&mut tag, key.code) {
 									tissue_box.tissues[index].tags.remove(&tag);
-									tissue_box.save(save_path);
+									last_error = tissue_box.save(save_path);
 									Mode::Normal
 								} else {
 									Mode::RemoveTag(tag)
