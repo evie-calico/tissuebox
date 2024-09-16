@@ -108,10 +108,13 @@ pub mod tui {
 
 		enum Mode {
 			Normal,
+			Help,
 			Add(String),
 			Describe(String),
 			Tag(String),
 			Copy,
+			Publish,
+			FailedPublish(String),
 			Remove,
 			RemoveDescription(usize),
 			RemoveTag(String),
@@ -126,6 +129,8 @@ pub mod tui {
 				let instructions = match &mode {
 					Mode::Normal => {
 						Title::from(Line::from(vec![
+							" H".red().bold(),
+							"elp".into(),
 							" a".red().bold(),
 							"dd".into(),
 							" d".red().bold(),
@@ -134,12 +139,17 @@ pub mod tui {
 							"ag".into(),
 							" c".red().bold(),
 							"opy".into(),
+							" P".red().bold(),
+							"ublish".into(),
 							" r".red().bold(),
 							"emove".into(),
 							" q".red().bold(),
 							"uit ".into(),
 						]))
 					},
+					Mode::Help => Title::from(Line::from(vec![
+						" Help! ".blue().bold(),
+					])),
 					Mode::Add(title) => Title::from(Line::from(vec![
 						" Add tissue: ".blue().bold(),
 						title.into(),
@@ -163,7 +173,21 @@ pub mod tui {
 							" d".red().bold(),
 							"escription".into(),
 							" l".red().bold(),
-							"ist".into(),
+							"ist ".into(),
+						]))
+					}
+					Mode::Publish => {
+						Title::from(Line::from(vec![
+							" Really Publish?:".blue().bold(),
+							" y".red().bold(),
+							"es".into(),
+							" N".red().bold(),
+							"o ".into(),
+						]))
+					}
+					Mode::FailedPublish(_) => {
+						Title::from(Line::from(vec![
+							" Publish Failed ".blue().bold(),
 						]))
 					}
 					Mode::Remove => {
@@ -174,7 +198,7 @@ pub mod tui {
 							" d".red().bold(),
 							"escription".into(),
 							" t".red().bold(),
-							"ag".into(),
+							"ag ".into(),
 						]))
 					}
 					Mode::RemoveDescription(_) => Title::from(Line::from(vec![
@@ -202,23 +226,28 @@ pub mod tui {
 				.centered();
 				frame.render_widget(paper, Rect { height: 4, ..area });
 				let mut body = Text::default();
-				for (i, tissue) in tissue_box.tissues.iter().enumerate() {
-					let mut title: Line = tissue.title.clone().into();
-					if let Mode::RemoveDescription(_) = mode {} else if i == index{
-						title = title.black().on_white();
-					};
-					for tag in &tissue.tags {
-						title.spans.push(format!(" ({tag})").magenta());
-					}
-					body.lines.push(title);
-					for (i, description) in tissue.description.iter().enumerate() {
-						if let Mode::RemoveDescription(index) = mode {
-							if index == i {
-								body.lines.push(format!("- {description}").black().on_white().into());
-								continue;
+				match &mode {
+					Mode::FailedPublish(reason) => body.lines.push(reason.clone().into()),
+					_ => {
+						for (i, tissue) in tissue_box.tissues.iter().enumerate() {
+							let mut title: Line = tissue.title.clone().into();
+							if let Mode::RemoveDescription(_) = mode {} else if i == index{
+								title = title.black().on_white();
+							};
+							for tag in &tissue.tags {
+								title.spans.push(format!(" ({tag})").magenta());
+							}
+							body.lines.push(title);
+							for (i, description) in tissue.description.iter().enumerate() {
+								if let Mode::RemoveDescription(index) = mode {
+									if index == i {
+										body.lines.push(format!("- {description}").black().on_white().into());
+										continue;
+									}
+								}
+								body.lines.push(format!("- {description}").dark_gray().into());
 							}
 						}
-						body.lines.push(format!("- {description}").dark_gray().into());
 					}
 				}
 				frame.render_widget(Paragraph::new(body).block(block), area.offset(Offset { x: 0, y: 4 }));
@@ -245,15 +274,24 @@ pub mod tui {
 									index += 1;
 									Mode::Normal
 								}
+								KeyCode::Char('H') => Mode::Help,
 								KeyCode::Char('a') => Mode::Add(String::new()),
 								KeyCode::Char('d') => Mode::Describe(String::new()),
 								KeyCode::Char('t') => Mode::Tag(String::new()),
 								KeyCode::Char('c') => Mode::Copy,
+								KeyCode::Char('P') => Mode::Publish,
 								KeyCode::Char('r') => Mode::Remove,
 								KeyCode::Char('q') => return Ok(()),
 								KeyCode::Char('Q') => panic!("force quit"),
 								_ => Mode::Normal,
 							},
+							m @ Mode::Help | m @ Mode::FailedPublish(_) => {
+								if let KeyCode::Char(_) = key.code {
+									Mode::Normal
+								} else {
+									m
+								}
+							}
 							Mode::Add(mut title) => {
 								if gather_line(&mut title, key.code) {
 									// This clone is uneccessary.
@@ -285,6 +323,66 @@ pub mod tui {
 								KeyCode::Char('d') => todo!(),
 								KeyCode::Char('l') => todo!(),
 								_ => Mode::Copy,
+							},
+							Mode::Publish => match key.code {
+								KeyCode::Char('y') | KeyCode::Char('Y') => {
+									let tissue = &tissue_box.tissues[index];
+									if let Ok(output) = std::process::Command::new("gh")
+										.arg("label")
+										.arg("list")
+										.output()
+									{
+										if output.status.success() {
+											let labels = String::from_utf8_lossy(&output.stdout);
+											let labels = labels
+												.lines()
+												.map(|s| s.split_once('\t').unwrap_or_default().0)
+												.collect::<Vec<_>>();
+											for tag in &tissue.tags {
+												if !labels.contains(&tag.as_str()) {
+													let _ = std::process::Command::new("gh")
+														.arg("label")
+														.arg("create")
+														.arg(tag)
+														.output();
+												}
+											}
+										}
+									}
+									match std::process::Command::new("gh")
+										.arg("issue")
+										.arg("create")
+										.arg("--title")
+										.arg(&tissue.title)
+										.arg("--body")
+										.arg(tissue.description.join("\n"))
+										.arg("--label")
+										.arg(
+											tissue
+												.tags
+												.iter()
+												.fold(String::new(), |a, b| a + "\n" + b),
+										)
+										.output()
+									{
+										Ok(output) => {
+											if output.status.success() {
+												tissue_box.tissues.remove(index);
+												Mode::Normal
+											} else {
+												Mode::FailedPublish(format!(
+													"failed to publish issue: {}",
+													String::from_utf8_lossy(&output.stderr)
+												))
+											}
+										}
+										Err(msg) => Mode::FailedPublish(format!(
+											"failed to execute `gh`: {msg}"
+										)),
+									}
+								}
+								KeyCode::Char('n') | KeyCode::Char('N') => Mode::Normal,
+								_ => Mode::Publish,
 							},
 							Mode::Remove => match key.code {
 								KeyCode::Char('T') => {
