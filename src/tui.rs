@@ -58,7 +58,7 @@ fn tui(mut terminal: DefaultTerminal, tissue_box: &mut TissueBox, save_path: &Pa
 			);
 
 			// TissueBox
-			let title = Title::from(" Tissue TissueBox ".red().bold());
+			let title = Title::from(" tissuebox ".red().bold());
 			let instructions = instructions(&mode);
 			let block = Block::bordered()
 				.title(title.alignment(Alignment::Center))
