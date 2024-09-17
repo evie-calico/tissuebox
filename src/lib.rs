@@ -352,8 +352,10 @@ pub mod tui {
 					let error = tissue.publish();
 					if error.is_ok() {
 						let _ = tissue_box.remove(*index);
+						InputResult::Changed
+					} else {
+						InputResult::Error(error)
 					}
-					InputResult::Error(error)
 				}
 				KeyCode::Char('n') | KeyCode::Char('N') => Mode::Normal.into(),
 				_ => Mode::Publish.into(),
@@ -364,8 +366,10 @@ pub mod tui {
 					let error = tissue.commit();
 					if error.is_ok() {
 						let _ = tissue_box.remove(*index);
+						InputResult::Changed
+					} else {
+						InputResult::Error(error)
 					}
-					InputResult::Error(error)
 				}
 				KeyCode::Char('n') | KeyCode::Char('N') => Mode::Normal.into(),
 				_ => Mode::Commit.into(),
