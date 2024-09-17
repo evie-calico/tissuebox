@@ -111,6 +111,8 @@ pub enum Error {
 	CommitFailed(io::Error),
 	#[error("failed to publish: {0}")]
 	PublishFailed(io::Error),
+	#[error("list command specified without index")]
+	InvalidListCommand,
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
@@ -153,7 +155,7 @@ pub fn run(command: Command, tissue_box: &mut TissueBox) -> Result<Option<String
 			tags.push('\n');
 			Ok(Some(tags))
 		}
-		Command::List(List { index: None, which: Some(_) }) => panic!("list subcommand specified without index"),
+		Command::List(List { index: None, which: Some(_) }) => Err(Error::InvalidListCommand),
 		Command::Add(Add { title }) => {
 			tissue_box.create(title);
 			Ok(None)
