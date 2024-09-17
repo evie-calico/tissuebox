@@ -123,6 +123,13 @@ fn main() {
 		exit(1);
 	});
 
+	let save = |tissue_box: &tissuebox::Box| {
+		tissue_box.save(&cli.input).unwrap_or_else(|msg| {
+			error!("failed to serialize tissue box: {msg}");
+			exit(1);
+		});
+	};
+
 	// Update tissue box
 	match cli.command {
 		Some(Command::List(List {
@@ -176,18 +183,24 @@ fn main() {
 			index: None,
 			which: Some(_),
 		})) => panic!("list subcommand specified without index"),
-		Some(Command::Add(Add { title })) => tissue_box.create(title),
+		Some(Command::Add(Add { title })) => {
+			tissue_box.create(title);
+			save(&tissue_box);
+		}
 		Some(Command::Describe(Describe { index, description })) => {
 			try_get_mut(&mut tissue_box, index).describe(description);
+			save(&tissue_box);
 		}
 		Some(Command::Tag(Tag { index, tag })) => {
 			try_get_mut(&mut tissue_box, index).tag(tag);
+			save(&tissue_box);
 		}
 		Some(Command::Remove(Remove { index, which: None })) => {
 			if tissue_box.remove(index).is_none() {
 				error!("no tissue with index {index}");
 				exit(1);
 			};
+			save(&tissue_box);
 		}
 		Some(Command::Remove(Remove {
 			index: tissue_index,
@@ -199,6 +212,7 @@ fn main() {
 				exit(1);
 			}
 			tissue.description.remove(index);
+			save(&tissue_box);
 		}
 		Some(Command::Remove(Remove {
 			index,
@@ -208,28 +222,25 @@ fn main() {
 				error!("no tag named {tag}");
 				exit(1);
 			}
+			save(&tissue_box);
 		}
 		Some(Command::Commit(Index { index })) => {
-			match try_get_mut(&mut tissue_box, index).commit() {
-				Ok(()) => {
-					let _ = tissue_box.remove(index);
-				}
-				Err(msg) => {
+			try_get_mut(&mut tissue_box, index)
+				.commit()
+				.unwrap_or_else(|msg| {
 					error!("failed to commit: {msg}");
 					exit(1);
-				}
-			}
+				});
+			save(&tissue_box);
 		}
 		Some(Command::Publish(Index { index })) => {
-			match try_get_mut(&mut tissue_box, index).publish() {
-				Ok(()) => {
-					let _ = tissue_box.remove(index);
-				}
-				Err(msg) => {
+			try_get_mut(&mut tissue_box, index)
+				.publish()
+				.unwrap_or_else(|msg| {
 					error!("failed to publish: {msg}");
 					exit(1);
-				}
-			}
+				});
+			save(&tissue_box);
 		}
 		None => {
 			{
@@ -252,9 +263,4 @@ fn main() {
 			}
 		}
 	}
-
-	tissue_box.save(&cli.input).unwrap_or_else(|msg| {
-		error!("failed to serialize tissue box: {msg}");
-		exit(1);
-	});
 }
