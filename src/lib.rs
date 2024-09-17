@@ -113,6 +113,8 @@ pub struct Box {
 	recycle_bin: Vec<Tissue>,
 	#[serde(default)]
 	tissues: Vec<Tissue>,
+	#[serde(default)]
+	starred: Option<usize>,
 }
 
 impl Box {
@@ -172,7 +174,7 @@ pub mod tui {
 		layout::{Alignment, Rect},
 		style::Stylize,
 		symbols::border,
-		text::{Line, Text},
+		text::{Line, Span, Text},
 		widgets::{
 			block::{Position, Title},
 			Block, Padding, Paragraph,
@@ -180,6 +182,34 @@ pub mod tui {
 		DefaultTerminal,
 	};
 	use std::{io, path::Path};
+
+	fn format_tissues(body: &mut Text, tissues: &[crate::Tissue], index: usize, starred: Option<usize>, description_index: Option<usize>) {
+		for (i, tissue) in tissues.iter().enumerate() {
+			let mut title = Span::default();
+			title.content.to_mut().push(match starred {
+				Some(starred) if starred == i => '*',
+				_ => ' ',
+			});
+			title.content.to_mut().push_str(&tissue.title);
+			if index == i && description_index.is_none() {
+				title = title.black().on_white();
+			};
+			let mut title: Line = title.into();
+			for tag in &tissue.tags {
+				title.spans.push(format!(" ({tag})").magenta());
+			}
+			body.lines.push(title);
+			for (di, description) in tissue.description.iter().enumerate() {
+				if let Some(d_index) = description_index {
+					if index == i && d_index == di {
+						body.lines.push(format!(" - {description}").black().on_white().into());
+						continue;
+					}
+				}
+				body.lines.push(format!(" - {description}").dark_gray().into());
+			}
+		}
+	}
 
 	pub fn run(tissue_box: &mut crate::Box, save_path: &Path) -> io::Result<()> {
 		let mut terminal = ratatui::init();
@@ -332,28 +362,6 @@ pub mod tui {
 					)
 					.padding(Padding::horizontal(2))
 					.border_set(border::ROUNDED);
-
-				let format_tissues = |body: &mut Text, tissues: &[crate::Tissue]| {
-					for (i, tissue) in tissues.iter().enumerate() {
-						let mut title: Line = tissue.title.clone().into();
-						if let Mode::RemoveDescription(_) = mode {} else if i == index{
-							title = title.black().on_white();
-						};
-						for tag in &tissue.tags {
-							title.spans.push(format!(" ({tag})").magenta());
-						}
-						body.lines.push(title);
-						for (di, description) in tissue.description.iter().enumerate() {
-							if let Mode::RemoveDescription(d_index) = mode {
-								if index == i && d_index == di {
-									body.lines.push(format!("- {description}").black().on_white().into());
-									continue;
-								}
-							}
-							body.lines.push(format!("- {description}").dark_gray().into());
-						}
-					}
-				};
 				
 				let mut body = Text::default();
 				match &mode {
@@ -365,7 +373,12 @@ pub mod tui {
 						body.lines.push(" d (describe): Append a description to the selected tissue".into());
 						body.lines.push(" t (tag): Assign a tag to the selected tissue".into());
 						body.lines.push(" r (remove): Delete the selected issue".into());
+						// The below should be moved to an "advanced" section should they reach ~3 or 4 buttons
 						body.lines.push(" R (restore): Restore a deleted tissue".into());
+						body.lines.push(" * (star): Marks the tissue with a *.".into());
+						body.lines.push("           Pressing * on a starred tissue removes the star,".into());
+						body.lines.push("           and pressing * from any other tissue moves the cursor to the starred issue.".into());
+						body.lines.push("           Useful when working on a specific tissue.".into());
 						body.lines.push("".into());
 						body.lines.push("Output commands".red().into());
 						body.lines.push(" c (copy): Copy the title or description of the selected tissue to the clipboard".into());
@@ -374,11 +387,14 @@ pub mod tui {
 						body.lines.push("             Equivalent to `git add --all && git commit -m {title}`".into());
 						body.lines.push(" P (publish): Publish the selected issue to GitHub. Requires the `gh` command.".into());
 					}
-					Mode::Restore(_) => {
-						format_tissues(&mut body, &tissue_box.recycle_bin);
+					Mode::Restore(index) => {
+						format_tissues(&mut body, &tissue_box.recycle_bin, *index, None, None);
+					}
+					Mode::RemoveDescription(description_index) => {
+						format_tissues(&mut body, &tissue_box.tissues, index, tissue_box.starred, Some(*description_index));
 					}
 					_ => {
-						format_tissues(&mut body, &tissue_box.tissues);
+						format_tissues(&mut body, &tissue_box.tissues, index, tissue_box.starred, None);
 					}
 				}
 				frame.render_widget(Paragraph::new(body).block(block), Rect { y: area.y + 4, height: area.height - 5, ..area});
@@ -424,6 +440,18 @@ pub mod tui {
 									} else {
 										Mode::Restore(0)
 									}
+								}
+								KeyCode::Char('*') => {
+									if let Some(starred) = tissue_box.starred {
+										if starred == index {
+											tissue_box.starred = None;
+										} else {
+											index = starred
+										}
+									} else {
+										tissue_box.starred = Some(index);
+									}
+									Mode::Normal
 								}
 								KeyCode::Char('q') => return Ok(()),
 								_ => Mode::Normal,
