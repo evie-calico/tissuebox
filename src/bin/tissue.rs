@@ -15,13 +15,20 @@ fn main() {
 	// Update tissue box
 	match cli.command {
 		Some(command) => {
-			cli::run(command, &mut tissue_box);
+			match cli::run(command, &mut tissue_box) {
+				Ok(Some(out)) => print!("{out}"),
+				Ok(None) => {}
+				Err(msg) => {
+					error!("{msg}");
+					exit(1);
+				}
+			}
 			// cli::run can't manage saving because it needs to be run in unit tests,
 			// so just save after every run.
-			tissue_box.save(&cli.input).unwrap_or_else(|msg| {
+			if let Err(msg) = tissue_box.save(&cli.input) {
 				error!("failed to serialize tissue box: {msg}");
 				exit(1);
-			});
+			};
 		}
 		None => {
 			let original_hook = panic::take_hook();

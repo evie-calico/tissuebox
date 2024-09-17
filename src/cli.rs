@@ -1,8 +1,6 @@
 use crate::prelude::*;
 use clap::{Args, Parser, Subcommand};
 use std::path::PathBuf;
-use std::process::exit;
-use tracing::error;
 
 #[derive(Parser)]
 pub struct Cli {
@@ -101,111 +99,103 @@ pub struct TagName {
 	pub tag: String,
 }
 
-pub fn run(command: Command, tissue_box: &mut TissueBox) {
-	fn try_get(tissue_box: &TissueBox, index: usize) -> &Tissue {
-		let Some(tissue) = tissue_box.get(index) else {
-			error!("no tissue with index {index}");
-			exit(1);
-		};
-		tissue
-	}
+#[derive(Debug, thiserror::Error)]
+pub enum Error {
+	#[error("no tissue with index {0}")]
+	TissueNotFound(usize),
+	#[error("no description with index {1} on tissue {0}")]
+	DescriptionNotFound(usize, usize),
+	#[error("no tag named {1} on tissue {0}")]
+	TagNotFound(usize, String),
+	#[error("failed to commit: {0}")]
+	CommitFailed(io::Error),
+	#[error("failed to publish: {0}")]
+	PublishFailed(io::Error),
+}
 
-	fn try_get_mut(tissue_box: &mut TissueBox, index: usize) -> &mut Tissue {
-		let Some(tissue) = tissue_box.get_mut(index) else {
-			error!("no tissue with index {index}");
-			exit(1);
-		};
-		tissue
-	}
+pub type Result<T, E = Error> = std::result::Result<T, E>;
 
+pub fn run(command: Command, tissue_box: &mut TissueBox) -> Result<Option<String>> {
 	match command {
-		Command::List(List { index: None, which: None }) => print!("{tissue_box}"),
-		Command::List(List { index: Some(index), which: None }) => print!("{}", try_get(tissue_box, index)),
+		Command::List(List { index: None, which: None }) => Ok(Some(tissue_box.to_string())),
+		Command::List(List { index: Some(index), which: None }) => Ok(Some(tissue_box.get(index).map(ToString::to_string).ok_or(Error::TissueNotFound(index))?)),
 		Command::List(List {
 			index: Some(index),
 			which: Some(WhichList::Title),
-		}) => {
-			println!("{}", try_get(tissue_box, index).title);
-		}
+		}) => Ok(Some(tissue_box.get(index).map(|x| x.title.clone() + "\n").ok_or(Error::TissueNotFound(index))?)),
 		Command::List(List {
 			index: Some(index),
 			which: Some(WhichList::Description(OptionIndex { index: None })),
-		}) => {
-			println!("{}", try_get(tissue_box, index).description.join("\n"));
-		}
+		}) => Ok(Some(tissue_box.get(index).map(|x| x.description.join("\n")).ok_or(Error::TissueNotFound(index))?)),
 		Command::List(List {
 			index: Some(tissue_index),
 			which: Some(WhichList::Description(OptionIndex { index: Some(index) })),
-		}) => {
-			println!(
-				"{}",
-				try_get(tissue_box, tissue_index).description.get(index).unwrap_or_else(|| {
-					error!("no description with index {index} on tissue {index}");
-					exit(1);
-				})
-			)
-		}
+		}) => Ok(Some(
+			tissue_box
+				.get(tissue_index)
+				.ok_or(Error::TissueNotFound(tissue_index))?
+				.description
+				.get(index)
+				.map(|x| x.clone() + "\n")
+				.ok_or(Error::DescriptionNotFound(tissue_index, index))?,
+		)),
 		Command::List(List {
 			index: Some(index),
 			which: Some(WhichList::Tags),
 		}) => {
-			let tissue = try_get(tissue_box, index);
+			let tissue = tissue_box.get(index).ok_or(Error::TissueNotFound(index))?;
 			let mut iter = tissue.tags.iter();
-			if let Some(first) = iter.next() {
-				print!("{first}");
-				for next in iter {
-					print!(", {next}");
-				}
-				println!();
+			let mut tags = iter.next().cloned().unwrap_or_default();
+			for next in iter {
+				tags.push_str(", ");
+				tags.push_str(next);
 			}
+			tags.push('\n');
+			Ok(Some(tags))
 		}
 		Command::List(List { index: None, which: Some(_) }) => panic!("list subcommand specified without index"),
 		Command::Add(Add { title }) => {
 			tissue_box.create(title);
+			Ok(None)
 		}
 		Command::Describe(Describe { index, description }) => {
-			try_get_mut(tissue_box, index).describe(description);
+			tissue_box.get_mut(index).ok_or(Error::TissueNotFound(index))?.describe(description);
+			Ok(None)
 		}
 		Command::Tag(Tag { index, tag }) => {
-			try_get_mut(tissue_box, index).tag(tag);
+			tissue_box.get_mut(index).ok_or(Error::TissueNotFound(index))?.tag(tag);
+			Ok(None)
 		}
 		Command::Remove(Remove { index, which: None }) => {
-			if tissue_box.remove(index).is_none() {
-				error!("no tissue with index {index}");
-				exit(1);
-			};
+			tissue_box.remove(index).ok_or(Error::TissueNotFound(index))?;
+			Ok(None)
 		}
 		Command::Remove(Remove {
 			index: tissue_index,
 			which: Some(WhichRemove::Description(Index { index })),
 		}) => {
-			let tissue = try_get_mut(tissue_box, tissue_index);
-			if tissue.description.get(index).is_none() {
-				error!("no description with index {index} on tissue {index}");
-				exit(1);
-			}
+			let tissue = tissue_box.get_mut(tissue_index).ok_or(Error::TissueNotFound(tissue_index))?;
+			tissue.description.get(index).ok_or(Error::DescriptionNotFound(tissue_index, index))?;
 			tissue.description.remove(index);
+			Ok(None)
 		}
 		Command::Remove(Remove {
 			index,
 			which: Some(WhichRemove::Tag(TagName { tag })),
 		}) => {
-			if !try_get_mut(tissue_box, index).tags.remove(&tag) {
-				error!("no tag named {tag}");
-				exit(1);
+			if tissue_box.get_mut(index).ok_or(Error::TissueNotFound(index))?.tags.remove(&tag) {
+				Ok(None)
+			} else {
+				Err(Error::TagNotFound(index, tag))
 			}
 		}
 		Command::Commit(Index { index }) => {
-			try_get_mut(tissue_box, index).commit().unwrap_or_else(|msg| {
-				error!("failed to commit: {msg}");
-				exit(1);
-			});
+			tissue_box.get_mut(index).ok_or(Error::TissueNotFound(index))?.commit().map_err(Error::CommitFailed)?;
+			Ok(None)
 		}
 		Command::Publish(Index { index }) => {
-			try_get_mut(tissue_box, index).publish().unwrap_or_else(|msg| {
-				error!("failed to publish: {msg}");
-				exit(1);
-			});
+			tissue_box.get_mut(index).ok_or(Error::TissueNotFound(index))?.publish().map_err(Error::PublishFailed)?;
+			Ok(None)
 		}
 	}
 }
