@@ -132,14 +132,8 @@ fn main() {
 
 	// Update tissue box
 	match cli.command {
-		Some(Command::List(List {
-			index: None,
-			which: None,
-		})) => print!("{tissue_box}"),
-		Some(Command::List(List {
-			index: Some(index),
-			which: None,
-		})) => print!("{}", try_get(&tissue_box, index)),
+		Some(Command::List(List { index: None, which: None })) => print!("{tissue_box}"),
+		Some(Command::List(List { index: Some(index), which: None })) => print!("{}", try_get(&tissue_box, index)),
 		Some(Command::List(List {
 			index: Some(index),
 			which: Some(WhichList::Title),
@@ -155,16 +149,15 @@ fn main() {
 		Some(Command::List(List {
 			index: Some(tissue_index),
 			which: Some(WhichList::Description(OptionIndex { index: Some(index) })),
-		})) => println!(
-			"{}",
-			try_get(&tissue_box, tissue_index)
-				.description
-				.get(index)
-				.unwrap_or_else(|| {
+		})) => {
+			println!(
+				"{}",
+				try_get(&tissue_box, tissue_index).description.get(index).unwrap_or_else(|| {
 					error!("no description with index {index} on tissue {index}");
 					exit(1);
 				})
-		),
+			)
+		}
 		Some(Command::List(List {
 			index: Some(index),
 			which: Some(WhichList::Tags),
@@ -179,10 +172,7 @@ fn main() {
 				println!();
 			}
 		}
-		Some(Command::List(List {
-			index: None,
-			which: Some(_),
-		})) => panic!("list subcommand specified without index"),
+		Some(Command::List(List { index: None, which: Some(_) })) => panic!("list subcommand specified without index"),
 		Some(Command::Add(Add { title })) => {
 			tissue_box.create(title);
 			save(&tissue_box);
@@ -225,21 +215,17 @@ fn main() {
 			save(&tissue_box);
 		}
 		Some(Command::Commit(Index { index })) => {
-			try_get_mut(&mut tissue_box, index)
-				.commit()
-				.unwrap_or_else(|msg| {
-					error!("failed to commit: {msg}");
-					exit(1);
-				});
+			try_get_mut(&mut tissue_box, index).commit().unwrap_or_else(|msg| {
+				error!("failed to commit: {msg}");
+				exit(1);
+			});
 			save(&tissue_box);
 		}
 		Some(Command::Publish(Index { index })) => {
-			try_get_mut(&mut tissue_box, index)
-				.publish()
-				.unwrap_or_else(|msg| {
-					error!("failed to publish: {msg}");
-					exit(1);
-				});
+			try_get_mut(&mut tissue_box, index).publish().unwrap_or_else(|msg| {
+				error!("failed to publish: {msg}");
+				exit(1);
+			});
 			save(&tissue_box);
 		}
 		None => {
@@ -250,10 +236,7 @@ fn main() {
 				panic::set_hook(Box::new(move |panic_info| {
 					// intentionally ignore errors here since we're already in a panic
 					let _ = crossterm::terminal::disable_raw_mode();
-					let _ = crossterm::execute!(
-						std::io::stdout(),
-						crossterm::terminal::LeaveAlternateScreen
-					);
+					let _ = crossterm::execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen);
 					original_hook(panic_info);
 				}));
 			}

@@ -1,1 +1,4 @@
 hard_tabs = true
+# Fixes failure to format lib.rs for some reason
+max_width = 256
+
