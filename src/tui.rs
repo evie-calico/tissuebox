@@ -174,7 +174,7 @@ fn input(mode: Mode, code: KeyCode, index: &mut usize, tissue_box: &mut TissueBo
 				} else {
 					tissue_box.starred = Some(*index);
 				}
-				Mode::Normal.into()
+				InputResult::Changed
 			}
 			_ => Mode::Normal.into(),
 		},
