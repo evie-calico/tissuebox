@@ -112,6 +112,12 @@ impl TissueBox {
 
 	#[must_use]
 	pub fn remove(&mut self, index: usize) -> Option<Tissue> {
+		// If this issue is starred, reset the star state.
+		if let Some(i) = self.starred {
+			if i == index {
+				self.starred = None;
+			}
+		}
 		self.tissues.get(index)?;
 		let tissue = self.tissues.remove(index);
 		self.recycle_bin.push(tissue.clone());
