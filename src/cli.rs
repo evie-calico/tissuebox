@@ -67,14 +67,14 @@ pub struct Add {
 pub struct Describe {
 	pub description: String,
 	/// Index of tissue to describe
-	pub index: usize,
+	pub index: Option<usize>,
 }
 
 #[derive(Args)]
 pub struct Tag {
 	pub tag: String,
 	/// Index of tissue to tag
-	pub index: usize,
+	pub index: Option<usize>,
 }
 
 #[derive(Args)]
@@ -161,10 +161,12 @@ pub fn run(command: Command, tissue_box: &mut TissueBox) -> Result<Option<String
 			Ok(None)
 		}
 		Command::Describe(Describe { index, description }) => {
+			let index = index.unwrap_or(tissue_box.tissues.len() - 1);
 			tissue_box.get_mut(index).ok_or(Error::TissueNotFound(index))?.describe(description);
 			Ok(None)
 		}
 		Command::Tag(Tag { index, tag }) => {
+			let index = index.unwrap_or(tissue_box.tissues.len() - 1);
 			tissue_box.get_mut(index).ok_or(Error::TissueNotFound(index))?.tag(tag);
 			Ok(None)
 		}

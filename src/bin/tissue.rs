@@ -136,18 +136,36 @@ mod tests {
 	fn describe() {
 		const DESC: &str = "Depends on Baz";
 		let mut tissue_box = test_box();
-		let command = cli::Command::Describe(cli::Describe { description: DESC.into(), index: 0 });
+		let command = cli::Command::Describe(cli::Describe { description: DESC.into(), index: Some(0) });
 		assert!(cli::run(command, &mut tissue_box).is_ok());
 		assert_eq!(tissue_box.get(0).unwrap().description.get(1).map(|x| x.as_str()), Some(DESC));
+	}
+
+	#[test]
+	fn describe_last() {
+		const DESC: &str = "Depends on Foo";
+		let mut tissue_box = test_box();
+		let command = cli::Command::Describe(cli::Describe { description: DESC.into(), index: None });
+		assert!(cli::run(command, &mut tissue_box).is_ok());
+		assert_eq!(tissue_box.get(1).unwrap().description.get(2).map(|x| x.as_str()), Some(DESC));
 	}
 
 	#[test]
 	fn tag() {
 		const TAG: &str = "good first issue";
 		let mut tissue_box = test_box();
-		let command = cli::Command::Tag(cli::Tag { tag: TAG.into(), index: 0 });
+		let command = cli::Command::Tag(cli::Tag { tag: TAG.into(), index: Some(0) });
 		assert!(cli::run(command, &mut tissue_box).is_ok());
 		assert!(tissue_box.get(0).unwrap().tags.contains(TAG));
+	}
+
+	#[test]
+	fn tag_last() {
+		const TAG: &str = "bug";
+		let mut tissue_box = test_box();
+		let command = cli::Command::Tag(cli::Tag { tag: TAG.into(), index: None });
+		assert!(cli::run(command, &mut tissue_box).is_ok());
+		assert!(tissue_box.get(1).unwrap().tags.contains(TAG));
 	}
 
 	#[test]
