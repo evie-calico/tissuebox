@@ -193,10 +193,12 @@ pub fn run(command: Command, tissue_box: &mut TissueBox) -> Result<Option<String
 		}
 		Command::Commit(Index { index }) => {
 			tissue_box.get_mut(index).ok_or(Error::TissueNotFound(index))?.commit().map_err(Error::CommitFailed)?;
+			tissue_box.remove(index).expect("index used by get_mut");
 			Ok(None)
 		}
 		Command::Publish(Index { index }) => {
 			tissue_box.get_mut(index).ok_or(Error::TissueNotFound(index))?.publish().map_err(Error::PublishFailed)?;
+			tissue_box.remove(index).expect("index used by get_mut");
 			Ok(None)
 		}
 	}
