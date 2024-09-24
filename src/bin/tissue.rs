@@ -7,14 +7,15 @@ use tracing::error;
 fn main() {
 	tracing_subscriber::fmt::init();
 	let cli = Cli::parse();
-	let mut tissue_box = TissueBox::open(&cli.input).unwrap_or_else(|msg| {
-		error!("failed to open {}: {msg}", cli.input.display());
-		exit(1);
-	});
 
 	// Update tissue box
 	match cli.command {
 		Some(command) => {
+			let mut tissue_box = TissueBox::open(&cli.input).unwrap_or_else(|msg| {
+				error!("failed to open {}: {msg}", cli.input.display());
+				exit(1);
+			});
+
 			match cli::run(command, &mut tissue_box) {
 				Ok(Some(out)) => print!("{out}"),
 				Ok(None) => {}
@@ -38,7 +39,7 @@ fn main() {
 				let _ = crossterm::execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen);
 				original_hook(panic_info);
 			}));
-			if let Err(msg) = tissuebox::tui::run(&mut tissue_box, &cli.input) {
+			if let Err(msg) = tissuebox::tui::run(&cli.input) {
 				error!("{msg}");
 				exit(1);
 			}

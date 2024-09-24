@@ -11,7 +11,10 @@ use ratatui::{
 	},
 	DefaultTerminal,
 };
-use std::{io, path::Path};
+use std::{
+	io::{self, Write},
+	path::Path,
+};
 
 enum Mode {
 	Normal,
@@ -28,20 +31,62 @@ enum Mode {
 	Restore(usize),
 }
 
-pub fn run(tissue_box: &mut TissueBox, save_path: &Path) -> io::Result<()> {
+pub fn run(path: &Path) -> io::Result<()> {
 	let mut terminal = ratatui::init();
 	terminal.clear()?;
-	let result = tui(terminal, tissue_box, save_path);
+	let result = tui(terminal, path);
 	ratatui::restore();
 	result
 }
 
-fn tui(mut terminal: DefaultTerminal, tissue_box: &mut TissueBox, save_path: &Path) -> io::Result<()> {
+fn tui(mut terminal: DefaultTerminal, path: &Path) -> io::Result<()> {
+	// If this is the first run and a git repository is present, offer to initialize .git/info/exclude.
+	let init_git_exclude = if !path.try_exists()? {
+		let response = if Path::new(".git").try_exists()? {
+			'git_prompt: loop {
+				terminal.draw(|frame| {
+					let area = frame.area();
+					frame.render_widget(
+						Paragraph::new("Tissuebox will initialize the file \"TODO\". Would you like to exclude it from git? (Note: This will update .git/info/exclude, not the public .gitignore)"),
+						area,
+					);
+				})?;
+
+				if let event::Event::Key(key) = event::read()? {
+					if key.kind == KeyEventKind::Press {
+						match key.code {
+							KeyCode::Char('y') | KeyCode::Char('Y') => {
+								break 'git_prompt true;
+							}
+							KeyCode::Char('n') | KeyCode::Char('N') => {
+								break 'git_prompt true;
+							}
+							_ => {}
+						}
+					}
+				}
+			}
+		} else {
+			false
+		};
+		fs::write(path, [])?;
+		response
+	} else {
+		false
+	};
+	let mut tissue_box = TissueBox::open(path)?;
+	if init_git_exclude {
+		let mut git_exclude = fs::OpenOptions::new().append(true).open(".git/info/exclude")?;
+		git_exclude.write_all("\n# Created by tissuebox\n".as_bytes())?;
+		git_exclude.write_all(path.as_os_str().as_encoded_bytes())?;
+		git_exclude.write_all("\n".as_bytes())?;
+	}
+
 	let mut index = 0;
 	let mut mode = Mode::Normal;
 	let mut last_error: io::Result<()> = Ok(());
 	loop {
-		index = index.min(tissue_box.tissues.len() - 1);
+		index = index.min(tissue_box.tissues.len().saturating_sub(1));
 		terminal.draw(|frame| {
 			let area = frame.area();
 
@@ -97,14 +142,14 @@ fn tui(mut terminal: DefaultTerminal, tissue_box: &mut TissueBox, save_path: &Pa
 				if let (Mode::Normal, KeyCode::Char('q')) = (&mode, key.code) {
 					return Ok(());
 				} else {
-					mode = match input(mode, key.code, &mut index, tissue_box) {
+					mode = match input(mode, key.code, &mut index, &mut tissue_box) {
 						InputResult::Mode(mode) => mode,
 						InputResult::Error(error) => {
 							last_error = error;
 							Mode::Normal
 						}
 						InputResult::Changed => {
-							last_error = tissue_box.save(save_path);
+							last_error = tissue_box.save(path);
 							Mode::Normal
 						}
 					}
