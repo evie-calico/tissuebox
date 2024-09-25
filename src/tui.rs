@@ -202,13 +202,6 @@ fn input(mode: Mode, code: KeyCode, index: &mut usize, tissue_box: &mut TissueBo
 			}
 			KeyCode::Char('H') => Mode::Help.into(),
 			KeyCode::Char('a') => Mode::Add(String::new()).into(),
-			KeyCode::Char('d') => Mode::Describe(String::new()).into(),
-			KeyCode::Char('t') => Mode::Tag(String::new()).into(),
-			KeyCode::Char('e') => Mode::Edit(String::new()).into(),
-			KeyCode::Char('c') => Mode::Copy.into(),
-			KeyCode::Char('C') => Mode::Commit.into(),
-			KeyCode::Char('P') => Mode::Publish.into(),
-			KeyCode::Char('r') => Mode::Remove.into(),
 			KeyCode::Char('R') => {
 				if tissue_box.recycle_bin.is_empty() {
 					Mode::Normal.into()
@@ -216,7 +209,14 @@ fn input(mode: Mode, code: KeyCode, index: &mut usize, tissue_box: &mut TissueBo
 					Mode::Restore(0).into()
 				}
 			}
-			KeyCode::Char('*') => {
+			KeyCode::Char('d') if !tissue_box.tissues.is_empty() => Mode::Describe(String::new()).into(),
+			KeyCode::Char('t') if !tissue_box.tissues.is_empty() => Mode::Tag(String::new()).into(),
+			KeyCode::Char('e') if !tissue_box.tissues.is_empty() => Mode::Edit(String::new()).into(),
+			KeyCode::Char('c') if !tissue_box.tissues.is_empty() => Mode::Copy.into(),
+			KeyCode::Char('C') if !tissue_box.tissues.is_empty() => Mode::Commit.into(),
+			KeyCode::Char('P') if !tissue_box.tissues.is_empty() => Mode::Publish.into(),
+			KeyCode::Char('r') if !tissue_box.tissues.is_empty() => Mode::Remove.into(),
+			KeyCode::Char('*') if !tissue_box.tissues.is_empty() => {
 				if let Some(starred) = tissue_box.starred {
 					if starred == *index {
 						tissue_box.starred = None;
