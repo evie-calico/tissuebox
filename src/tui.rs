@@ -57,16 +57,17 @@ fn tui(mut terminal: DefaultTerminal, path: &Path, clipboard_daemon: Option<&Pat
 		let response = if Path::new(".git").try_exists()? {
 			'git_prompt: loop {
 				terminal.draw(|frame| {
+					let instructions = Title::from(vec![" y".red().bold(), "es ".into(), "n".red().bold(), "o ".into()]);
+					let block = Block::bordered().title(instructions.alignment(Alignment::Center).position(Position::Bottom)).padding(Padding::horizontal(2)).border_set(border::ROUNDED);
 					let area = frame.area();
 					let mut body = Text::default();
-					body.lines.push("Tissuebox will initialize the file \"TODO\".".into());
+					let path_str = path.to_string_lossy();
+					body.lines.push(Line::from(vec!["Tissuebox will initialize the file \"".into(), path_str.blue(), "\".".into()]));
 					body.lines.push(Line::default());
 					body.lines.push("Would you like to exclude it from git?".into());
-					body.lines.push("Note: This will update .git/info/exclude, not the public .gitignore".blue().into());
-					body.lines.push("".into());
-					body.lines.push(Line::from(vec!["y".red(), "es ".into(), "n".red(), "o".into()]));
+					body.lines.push(Line::from(vec!["Note: This will update ".into(), ".git/info/exclude".blue(), ", not the public ".into(), ".gitignore".blue()]));
 
-					frame.render_widget(Paragraph::new(body).centered(), area);
+					frame.render_widget(Paragraph::new(body).block(block).centered(), area);
 				})?;
 
 				if let event::Event::Key(key) = event::read()? {
