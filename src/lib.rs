@@ -8,6 +8,8 @@ pub mod prelude {
 
 use std::{collections::HashSet, fs, io, path::Path};
 
+pub const DAEMONIZE_ARG: &str = "__internal_daemonize";
+
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct Tissue {
 	pub title: String,

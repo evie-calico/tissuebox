@@ -14,7 +14,18 @@ use ratatui::{
 use std::{
 	io::{self, Write},
 	path::Path,
+	process,
 };
+
+#[derive(Debug, thiserror::Error)]
+enum Error {
+	#[error(transparent)]
+	Io(#[from] io::Error),
+	#[error("clipboard is not available")]
+	MissingClipboard,
+	#[error(transparent)]
+	Arboard(#[from] arboard::Error),
+}
 
 enum Mode {
 	Normal,
@@ -32,15 +43,15 @@ enum Mode {
 	Restore(usize),
 }
 
-pub fn run(path: &Path) -> io::Result<()> {
+pub fn run(path: &Path, clipboard_daemon: Option<&Path>) -> io::Result<()> {
 	let mut terminal = ratatui::init();
 	terminal.clear()?;
-	let result = tui(terminal, path);
+	let result = tui(terminal, path, clipboard_daemon);
 	ratatui::restore();
 	result
 }
 
-fn tui(mut terminal: DefaultTerminal, path: &Path) -> io::Result<()> {
+fn tui(mut terminal: DefaultTerminal, path: &Path, clipboard_daemon: Option<&Path>) -> io::Result<()> {
 	// If this is the first run and a git repository is present, offer to initialize .git/info/exclude.
 	let init_git_exclude = if !path.try_exists()? {
 		let response = if Path::new(".git").try_exists()? {
@@ -90,7 +101,7 @@ fn tui(mut terminal: DefaultTerminal, path: &Path) -> io::Result<()> {
 
 	let mut index = 0;
 	let mut mode = Mode::Normal;
-	let mut last_error: io::Result<()> = Ok(());
+	let mut last_error: Result<(), Error> = Ok(());
 	loop {
 		index = index.min(tissue_box.tissues.len().saturating_sub(1));
 		terminal.draw(|frame| {
@@ -150,12 +161,29 @@ fn tui(mut terminal: DefaultTerminal, path: &Path) -> io::Result<()> {
 				} else {
 					mode = match input(mode, key.code, &mut index, &mut tissue_box) {
 						InputResult::Mode(mode) => mode,
+						InputResult::Copy(text) => {
+							if let Some(clipboard_daemon) = clipboard_daemon {
+								last_error = process::Command::new(clipboard_daemon)
+									.args([DAEMONIZE_ARG, &text])
+									.stdin(process::Stdio::null())
+									.stdout(process::Stdio::null())
+									.stderr(process::Stdio::null())
+									.current_dir("/")
+									.spawn()
+									.map(|_| ())
+									.map_err(Into::into);
+								Mode::Normal
+							} else {
+								last_error = Err(Error::MissingClipboard);
+								Mode::Normal
+							}
+						}
 						InputResult::Error(error) => {
 							last_error = error;
 							Mode::Normal
 						}
 						InputResult::Changed => {
-							last_error = tissue_box.save(path);
+							last_error = tissue_box.save(path).map_err(Error::from);
 							Mode::Normal
 						}
 					}
@@ -167,13 +195,26 @@ fn tui(mut terminal: DefaultTerminal, path: &Path) -> io::Result<()> {
 
 enum InputResult {
 	Mode(Mode),
-	Error(io::Result<()>),
+	Copy(String),
+	Error(Result<(), Error>),
 	Changed,
 }
 
 impl From<Mode> for InputResult {
 	fn from(mode: Mode) -> Self {
 		Self::Mode(mode)
+	}
+}
+
+impl<T: Into<Error>> From<T> for InputResult {
+	fn from(error: T) -> Self {
+		Self::Error(Err(error.into()))
+	}
+}
+
+impl<T: Into<Error>> From<Result<(), T>> for InputResult {
+	fn from(error: Result<(), T>) -> Self {
+		Self::Error(error.map_err(Into::into))
 	}
 }
 
@@ -269,16 +310,21 @@ fn input(mode: Mode, code: KeyCode, index: &mut usize, tissue_box: &mut TissueBo
 				Mode::Edit(title).into()
 			}
 		}
-		Mode::Copy => InputResult::Error(Err(io::Error::other("Copy command is unimplemented"))),
+		Mode::Copy => match code {
+			KeyCode::Char('t') => InputResult::Copy(tissue_box.tissues[*index].title.clone()),
+			KeyCode::Char('d') => InputResult::Copy(tissue_box.tissues[*index].description.join("\n")),
+			KeyCode::Char('l') => InputResult::Copy(tissue_box.to_string()),
+			_ => Mode::Copy.into(),
+		},
 		Mode::Publish => match code {
 			KeyCode::Char('y') | KeyCode::Char('Y') => {
 				let tissue = &tissue_box.tissues[*index];
-				let error = tissue.publish();
-				if error.is_ok() {
-					let _ = tissue_box.remove(*index);
-					InputResult::Changed
-				} else {
-					InputResult::Error(error)
+				match tissue.publish() {
+					Ok(()) => {
+						let _ = tissue_box.remove(*index);
+						InputResult::Changed
+					}
+					Err(msg) => msg.into(),
 				}
 			}
 			KeyCode::Char('n') | KeyCode::Char('N') => Mode::Normal.into(),
@@ -287,12 +333,12 @@ fn input(mode: Mode, code: KeyCode, index: &mut usize, tissue_box: &mut TissueBo
 		Mode::Commit => match code {
 			KeyCode::Char('y') | KeyCode::Char('Y') => {
 				let tissue = &tissue_box.tissues[*index];
-				let error = tissue.commit();
-				if error.is_ok() {
-					let _ = tissue_box.remove(*index);
-					InputResult::Changed
-				} else {
-					InputResult::Error(error)
+				match tissue.commit() {
+					Ok(()) => {
+						let _ = tissue_box.remove(*index);
+						InputResult::Changed
+					}
+					Err(msg) => msg.into(),
 				}
 			}
 			KeyCode::Char('n') | KeyCode::Char('N') => Mode::Normal.into(),

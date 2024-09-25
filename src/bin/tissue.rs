@@ -1,16 +1,29 @@
+use arboard::Clipboard;
+#[cfg(target_os = "linux")]
+use arboard::SetExtLinux;
 use clap::Parser;
-use std::panic;
 use std::process::exit;
+use std::{env, panic};
 use tissuebox::prelude::*;
 use tracing::error;
 
 fn main() {
-	tracing_subscriber::fmt::init();
+	{
+		let mut args = env::args().skip(1);
+		if args.next().as_deref() == Some(tissuebox::DAEMONIZE_ARG) {
+			let text = args.next().unwrap();
+			#[cfg(target_os = "linux")]
+			Clipboard::new().unwrap().set().wait().text(text).unwrap();
+			#[cfg(not(target_os = "linux"))]
+			Clipboard::new().unwrap().set_text(text).unwrap();
+		}
+	}
 	let cli = Cli::parse();
 
 	// Update tissue box
 	match cli.command {
 		Some(command) => {
+			tracing_subscriber::fmt::init();
 			let mut tissue_box = TissueBox::open(&cli.input).unwrap_or_else(|msg| {
 				error!("failed to open {}: {msg}", cli.input.display());
 				exit(1);
@@ -39,7 +52,7 @@ fn main() {
 				let _ = crossterm::execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen);
 				original_hook(panic_info);
 			}));
-			if let Err(msg) = tissuebox::tui::run(&cli.input) {
+			if let Err(msg) = tissuebox::tui::run(&cli.input, env::current_exe().ok().as_deref()) {
 				error!("{msg}");
 				exit(1);
 			}
