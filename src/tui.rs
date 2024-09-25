@@ -144,7 +144,8 @@ fn tui(mut terminal: DefaultTerminal, path: &Path, clipboard_daemon: Option<&Pat
 					format_tissues(&mut body, &tissue_box.tissues, index, tissue_box.starred, None);
 				}
 			}
-			frame.render_widget(Paragraph::new(body).block(block), Rect { y: area.y + 4, height: area.height - 5, ..area });
+			let paragraph_area = Rect { y: area.y + 4, height: area.height - 5, ..area };
+			frame.render_widget(Paragraph::new(body).block(block).scroll(((sum_lines(&tissue_box.tissues, index) as u16).saturating_sub(paragraph_area.height / 2 - 1), 0)), paragraph_area);
 
 			// Errors
 			if let Err(msg) = &last_error {
@@ -390,6 +391,10 @@ fn input(mode: Mode, code: KeyCode, index: &mut usize, tissue_box: &mut TissueBo
 			_ => Mode::Restore(index).into(),
 		},
 	}
+}
+
+fn sum_lines(tissues: &[Tissue], index: usize) -> usize {
+	tissues.iter().take(index).fold(0, |a, b| a + 1 + b.description.len())
 }
 
 fn format_tissues(body: &mut Text, tissues: &[Tissue], index: usize, starred: Option<usize>, description_index: Option<usize>) {
