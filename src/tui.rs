@@ -22,6 +22,7 @@ enum Mode {
 	Add(String),
 	Describe(String),
 	Tag(String),
+	Edit(String),
 	Copy,
 	Publish,
 	Commit,
@@ -46,10 +47,15 @@ fn tui(mut terminal: DefaultTerminal, path: &Path) -> io::Result<()> {
 			'git_prompt: loop {
 				terminal.draw(|frame| {
 					let area = frame.area();
-					frame.render_widget(
-						Paragraph::new("Tissuebox will initialize the file \"TODO\". Would you like to exclude it from git? (Note: This will update .git/info/exclude, not the public .gitignore)"),
-						area,
-					);
+					let mut body = Text::default();
+					body.lines.push("Tissuebox will initialize the file \"TODO\".".into());
+					body.lines.push(Line::default());
+					body.lines.push("Would you like to exclude it from git?".into());
+					body.lines.push("Note: This will update .git/info/exclude, not the public .gitignore".blue().into());
+					body.lines.push("".into());
+					body.lines.push(Line::from(vec!["y".red(), "es ".into(), "n".red(), "o".into()]));
+
+					frame.render_widget(Paragraph::new(body).centered(), area);
 				})?;
 
 				if let event::Event::Key(key) = event::read()? {
@@ -198,6 +204,7 @@ fn input(mode: Mode, code: KeyCode, index: &mut usize, tissue_box: &mut TissueBo
 			KeyCode::Char('a') => Mode::Add(String::new()).into(),
 			KeyCode::Char('d') => Mode::Describe(String::new()).into(),
 			KeyCode::Char('t') => Mode::Tag(String::new()).into(),
+			KeyCode::Char('e') => Mode::Edit(String::new()).into(),
 			KeyCode::Char('c') => Mode::Copy.into(),
 			KeyCode::Char('C') => Mode::Commit.into(),
 			KeyCode::Char('P') => Mode::Publish.into(),
@@ -252,6 +259,14 @@ fn input(mode: Mode, code: KeyCode, index: &mut usize, tissue_box: &mut TissueBo
 				InputResult::Changed
 			} else {
 				Mode::Tag(tag).into()
+			}
+		}
+		Mode::Edit(mut title) => {
+			if gather_line(&mut title, code) {
+				tissue_box.tissues[*index].title = title;
+				InputResult::Changed
+			} else {
+				Mode::Edit(title).into()
 			}
 		}
 		Mode::Copy => InputResult::Error(Err(io::Error::other("Copy command is unimplemented"))),
@@ -377,6 +392,7 @@ fn instructions(mode: &Mode) -> Title<'_> {
 		]))),
 		Mode::Help => Title::from(Line::from(Vec::from([" Help! ".blue().bold()]))),
 		Mode::Add(title) => Title::from(Line::from(Vec::from([" Add tissue: ".blue().bold(), title.into(), "_ ".into()]))),
+		Mode::Edit(title) => Title::from(Line::from(Vec::from([" Edit tissue title: ".blue().bold(), title.into(), "_ ".into()]))),
 		Mode::Describe(description) => Title::from(Line::from(Vec::from([" Describe tissue: ".blue().bold(), description.into(), "_ ".into()]))),
 		Mode::Tag(tag) => Title::from(Line::from(Vec::from([" Tag tissue: ".blue().bold(), tag.into(), "_ ".into()]))),
 		Mode::Copy => Title::from(Line::from(Vec::from([
@@ -412,7 +428,8 @@ fn help(body: &mut Text) {
 		" a (add): Create a new tissue under the given name".into(),
 		" d (describe): Append a description to the selected tissue".into(),
 		" t (tag): Assign a tag to the selected tissue".into(),
-		" r (remove): Delete the selected tissue)".into(),
+		" e (edit): Edit the title of the selected tissue".into(),
+		" r (remove): Delete the selected tissue".into(),
 		// The below should be moved to an "advanced" section should they reach ~3 or 4 buttons
 		" R (restore): Restore a deleted tissue".into(),
 		" * (star): Marks the tissue with a *.".into(),

@@ -20,6 +20,8 @@ pub enum Command {
 	Describe(Describe),
 	/// Add a tag to an existing tissue by index
 	Tag(Tag),
+	/// Edit the title of a tissue by index
+	Edit(Edit),
 	/// Delete an existing tissue by index
 	Remove(Remove),
 	/// Commit a tissue to git by index
@@ -74,6 +76,13 @@ pub struct Describe {
 pub struct Tag {
 	pub tag: String,
 	/// Index of tissue to tag
+	pub index: Option<usize>,
+}
+
+#[derive(Args)]
+pub struct Edit {
+	pub title: String,
+	/// Index of tissue to rename
 	pub index: Option<usize>,
 }
 
@@ -168,6 +177,11 @@ pub fn run(command: Command, tissue_box: &mut TissueBox) -> Result<Option<String
 		Command::Tag(Tag { index, tag }) => {
 			let index = index.unwrap_or(tissue_box.tissues.len() - 1);
 			tissue_box.get_mut(index).ok_or(Error::TissueNotFound(index))?.tag(tag);
+			Ok(None)
+		}
+		Command::Edit(Edit { title, index }) => {
+			let index = index.unwrap_or(tissue_box.tissues.len() - 1);
+			tissue_box.get_mut(index).ok_or(Error::TissueNotFound(index))?.title = title;
 			Ok(None)
 		}
 		Command::Remove(Remove { index, which: None }) => {
