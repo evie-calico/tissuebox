@@ -42,6 +42,12 @@ enum Mode {
 	RemoveDescription(usize),
 	RemoveTag(String),
 	Restore(usize),
+	Search(String),
+}
+
+struct State {
+	index: usize,
+	search_term: Option<String>,
 }
 
 pub fn run(path: &Path, clipboard_daemon: Option<&Path>) -> io::Result<()> {
@@ -111,11 +117,14 @@ fn tui(mut terminal: DefaultTerminal, path: &Path, clipboard_daemon: Option<&Pat
 		})
 		.unwrap_or(Path::new("tissuebox"));
 	let title = format!(" {} ", title.display());
-	let mut index = tissue_box.starred.unwrap_or(0);
+	let mut state = State {
+		index: tissue_box.starred.unwrap_or(0),
+		search_term: None,
+	};
 	let mut mode = Mode::Normal;
 	let mut last_error: Result<(), Error> = Ok(());
 	loop {
-		index = index.min(tissue_box.tissues.len().saturating_sub(1));
+		state.index = state.index.min(tissue_box.tissues.len().saturating_sub(1));
 		terminal.draw(|frame| {
 			let area = frame.area();
 
@@ -152,12 +161,12 @@ fn tui(mut terminal: DefaultTerminal, path: &Path, clipboard_daemon: Option<&Pat
 					((sum_lines(&tissue_box.recycle_bin, *index) as u16).saturating_sub(paragraph_area.height / 2 - 1), 0)
 				}
 				Mode::RemoveDescription(description_index) => {
-					format_tissues(&mut body, &tissue_box.tissues, index, tissue_box.starred, Some(*description_index));
-					(scroll(index), 0)
+					format_tissues(&mut body, &tissue_box.tissues, state.index, tissue_box.starred, Some(*description_index));
+					(scroll(state.index), 0)
 				}
 				_ => {
-					format_tissues(&mut body, &tissue_box.tissues, index, tissue_box.starred, None);
-					(scroll(index), 0)
+					format_tissues(&mut body, &tissue_box.tissues, state.index, tissue_box.starred, None);
+					(scroll(state.index), 0)
 				}
 			};
 			let paragraph = Paragraph::new(body).block(block).scroll(scroll);
@@ -177,7 +186,7 @@ fn tui(mut terminal: DefaultTerminal, path: &Path, clipboard_daemon: Option<&Pat
 				if let (Mode::Normal, KeyCode::Char('q')) = (&mode, key.code) {
 					return Ok(());
 				} else {
-					mode = match input(mode, key.code, &mut index, &mut tissue_box) {
+					mode = match input(mode, key.code, &mut state, &mut tissue_box) {
 						InputResult::Mode(mode) => mode,
 						InputResult::Copy(text) => {
 							if let Some(clipboard_daemon) = clipboard_daemon {
@@ -236,7 +245,7 @@ impl<T: Into<Error>> From<Result<(), T>> for InputResult {
 	}
 }
 
-fn input(mode: Mode, code: KeyCode, index: &mut usize, tissue_box: &mut TissueBox) -> InputResult {
+fn input(mode: Mode, code: KeyCode, state: &mut State, tissue_box: &mut TissueBox) -> InputResult {
 	fn gather_line(line: &mut String, code: KeyCode) -> bool {
 		match code {
 			KeyCode::Backspace => {
@@ -249,25 +258,30 @@ fn input(mode: Mode, code: KeyCode, index: &mut usize, tissue_box: &mut TissueBo
 		false
 	}
 
+	let next_term = |state: &mut State| {
+		if let Some(search_term) = &state.search_term {
+			for (i, tissue) in tissue_box.tissues.iter().enumerate().skip(state.index + 1).chain(tissue_box.tissues.iter().enumerate().take(state.index + 1)) {
+				if tissue.title.contains(search_term) {
+					state.index = i;
+					break;
+				}
+			}
+		}
+	};
+
 	match mode {
 		Mode::Normal => match code {
 			KeyCode::Char('k') | KeyCode::Char('h') | KeyCode::Up | KeyCode::Left => {
-				*index = index.saturating_sub(1);
+				state.index = state.index.saturating_sub(1);
 				Mode::Normal.into()
 			}
 			KeyCode::Char('j') | KeyCode::Char('l') | KeyCode::Down | KeyCode::Right => {
-				*index += 1;
+				state.index += 1;
 				Mode::Normal.into()
 			}
 			KeyCode::Char('H') => Mode::Help.into(),
 			KeyCode::Char('a') => Mode::Add(String::new()).into(),
-			KeyCode::Char('R') => {
-				if tissue_box.recycle_bin.is_empty() {
-					Mode::Normal.into()
-				} else {
-					Mode::Restore(0).into()
-				}
-			}
+			KeyCode::Char('R') if !tissue_box.recycle_bin.is_empty() => Mode::Restore(0).into(),
 			KeyCode::Char('d') if !tissue_box.tissues.is_empty() => Mode::Describe(String::new()).into(),
 			KeyCode::Char('t') if !tissue_box.tissues.is_empty() => Mode::Tag(String::new()).into(),
 			KeyCode::Char('e') if !tissue_box.tissues.is_empty() => Mode::Edit(String::new()).into(),
@@ -275,15 +289,31 @@ fn input(mode: Mode, code: KeyCode, index: &mut usize, tissue_box: &mut TissueBo
 			KeyCode::Char('C') if !tissue_box.tissues.is_empty() => Mode::Commit.into(),
 			KeyCode::Char('P') if !tissue_box.tissues.is_empty() => Mode::Publish.into(),
 			KeyCode::Char('r') if !tissue_box.tissues.is_empty() => Mode::Remove.into(),
+			KeyCode::Char('/') if !tissue_box.tissues.is_empty() => Mode::Search(String::new()).into(),
+			KeyCode::Char('n') if !tissue_box.tissues.is_empty() => {
+				next_term(state);
+				Mode::Normal.into()
+			}
+			KeyCode::Char('N') if !tissue_box.tissues.is_empty() => {
+				if let Some(search_term) = &state.search_term {
+					for (i, tissue) in tissue_box.tissues.iter().enumerate().take(state.index).rev().chain(tissue_box.tissues.iter().enumerate().skip(state.index).rev()) {
+						if tissue.title.contains(search_term) {
+							state.index = i;
+							break;
+						}
+					}
+				};
+				Mode::Normal.into()
+			}
 			KeyCode::Char('*') if !tissue_box.tissues.is_empty() => {
 				if let Some(starred) = tissue_box.starred {
-					if starred == *index {
+					if starred == state.index {
 						tissue_box.starred = None;
 					} else {
-						*index = starred
+						state.index = starred
 					}
 				} else {
-					tissue_box.starred = Some(*index);
+					tissue_box.starred = Some(state.index);
 				}
 				InputResult::Changed
 			}
@@ -300,7 +330,7 @@ fn input(mode: Mode, code: KeyCode, index: &mut usize, tissue_box: &mut TissueBo
 			if gather_line(&mut title, code) {
 				tissue_box.create(title);
 				// Focus new tissue
-				*index = tissue_box.tissues.len() - 1;
+				state.index = tissue_box.tissues.len() - 1;
 				InputResult::Changed
 			} else {
 				Mode::Add(title).into()
@@ -308,7 +338,7 @@ fn input(mode: Mode, code: KeyCode, index: &mut usize, tissue_box: &mut TissueBo
 		}
 		Mode::Describe(mut description) => {
 			if gather_line(&mut description, code) {
-				tissue_box.tissues[*index].describe(description);
+				tissue_box.tissues[state.index].describe(description);
 				InputResult::Changed
 			} else {
 				Mode::Describe(description).into()
@@ -316,7 +346,7 @@ fn input(mode: Mode, code: KeyCode, index: &mut usize, tissue_box: &mut TissueBo
 		}
 		Mode::Tag(mut tag) => {
 			if gather_line(&mut tag, code) {
-				tissue_box.tissues[*index].tag(tag);
+				tissue_box.tissues[state.index].tag(tag);
 				InputResult::Changed
 			} else {
 				Mode::Tag(tag).into()
@@ -324,24 +354,24 @@ fn input(mode: Mode, code: KeyCode, index: &mut usize, tissue_box: &mut TissueBo
 		}
 		Mode::Edit(mut title) => {
 			if gather_line(&mut title, code) {
-				tissue_box.tissues[*index].title = title;
+				tissue_box.tissues[state.index].title = title;
 				InputResult::Changed
 			} else {
 				Mode::Edit(title).into()
 			}
 		}
 		Mode::Copy => match code {
-			KeyCode::Char('t') => InputResult::Copy(tissue_box.tissues[*index].title.clone()),
-			KeyCode::Char('d') => InputResult::Copy(tissue_box.tissues[*index].description.join("\n")),
+			KeyCode::Char('t') => InputResult::Copy(tissue_box.tissues[state.index].title.clone()),
+			KeyCode::Char('d') => InputResult::Copy(tissue_box.tissues[state.index].description.join("\n")),
 			KeyCode::Char('l') => InputResult::Copy(tissue_box.to_string()),
 			_ => Mode::Copy.into(),
 		},
 		Mode::Publish => match code {
 			KeyCode::Char('y') | KeyCode::Char('Y') => {
-				let tissue = &tissue_box.tissues[*index];
+				let tissue = &tissue_box.tissues[state.index];
 				match tissue.publish() {
 					Ok(()) => {
-						let _ = tissue_box.remove(*index);
+						let _ = tissue_box.remove(state.index);
 						InputResult::Changed
 					}
 					Err(msg) => msg.into(),
@@ -352,10 +382,10 @@ fn input(mode: Mode, code: KeyCode, index: &mut usize, tissue_box: &mut TissueBo
 		},
 		Mode::Commit => match code {
 			KeyCode::Char('y') | KeyCode::Char('Y') => {
-				let tissue = &tissue_box.tissues[*index];
+				let tissue = &tissue_box.tissues[state.index];
 				match tissue.commit() {
 					Ok(()) => {
-						let _ = tissue_box.remove(*index);
+						let _ = tissue_box.remove(state.index);
 						InputResult::Changed
 					}
 					Err(msg) => msg.into(),
@@ -366,11 +396,11 @@ fn input(mode: Mode, code: KeyCode, index: &mut usize, tissue_box: &mut TissueBo
 		},
 		Mode::Remove => match code {
 			KeyCode::Char('T') => {
-				let _ = tissue_box.remove(*index);
+				let _ = tissue_box.remove(state.index);
 				InputResult::Changed
 			}
 			KeyCode::Char('d') => {
-				if tissue_box.tissues[*index].description.is_empty() {
+				if tissue_box.tissues[state.index].description.is_empty() {
 					Mode::Normal.into()
 				} else {
 					Mode::RemoveDescription(0).into()
@@ -380,7 +410,7 @@ fn input(mode: Mode, code: KeyCode, index: &mut usize, tissue_box: &mut TissueBo
 			_ => Mode::Remove.into(),
 		},
 		Mode::RemoveDescription(i) => {
-			let tissue = &mut tissue_box.tissues[*index];
+			let tissue = &mut tissue_box.tissues[state.index];
 			match code {
 				KeyCode::Char('k') | KeyCode::Char('h') | KeyCode::Up | KeyCode::Left => Mode::RemoveDescription(i.saturating_sub(1)).into(),
 				KeyCode::Char('j') | KeyCode::Char('l') | KeyCode::Down | KeyCode::Right => Mode::RemoveDescription((i + 1).min(tissue.description.len() - 1)).into(),
@@ -393,21 +423,30 @@ fn input(mode: Mode, code: KeyCode, index: &mut usize, tissue_box: &mut TissueBo
 		}
 		Mode::RemoveTag(mut tag) => {
 			if gather_line(&mut tag, code) {
-				tissue_box.tissues[*index].tags.remove(&tag);
+				tissue_box.tissues[state.index].tags.remove(&tag);
 				InputResult::Changed
 			} else {
 				Mode::RemoveTag(tag).into()
 			}
 		}
-		Mode::Restore(index) => match code {
-			KeyCode::Char('k') | KeyCode::Char('h') | KeyCode::Up | KeyCode::Left => Mode::Restore(index.saturating_sub(1)).into(),
-			KeyCode::Char('j') | KeyCode::Char('l') | KeyCode::Down | KeyCode::Right => Mode::Restore((index + 1).min(tissue_box.recycle_bin.len() - 1)).into(),
+		Mode::Restore(_) => match code {
+			KeyCode::Char('k') | KeyCode::Char('h') | KeyCode::Up | KeyCode::Left => Mode::Restore(state.index.saturating_sub(1)).into(),
+			KeyCode::Char('j') | KeyCode::Char('l') | KeyCode::Down | KeyCode::Right => Mode::Restore((state.index + 1).min(tissue_box.recycle_bin.len() - 1)).into(),
 			KeyCode::Enter => {
-				tissue_box.restore(index);
+				tissue_box.restore(state.index);
 				InputResult::Changed
 			}
-			_ => Mode::Restore(index).into(),
+			_ => Mode::Restore(state.index).into(),
 		},
+		Mode::Search(mut term) => {
+			if gather_line(&mut term, code) {
+				state.search_term = Some(term);
+				next_term(state);
+				Mode::Normal.into()
+			} else {
+				Mode::Search(term).into()
+			}
+		}
 	}
 }
 
@@ -497,6 +536,7 @@ fn instructions(mode: &Mode) -> Title<'_> {
 		Mode::RemoveDescription(_) => Title::from(Line::from(Vec::from([" Remove which description? ".blue().bold()]))),
 		Mode::RemoveTag(tag) => Title::from(Line::from(Vec::from([" Remove tag: ".blue().bold(), tag.into(), "_ ".into()]))),
 		Mode::Restore(_) => Title::from(Line::from(Vec::from([" Select tissue and restore ".blue().bold()]))),
+		Mode::Search(term) => Title::from(Line::from(Vec::from([" Search for: ".blue().bold(), term.into(), "_ ".into()]))),
 	}
 }
 
@@ -511,6 +551,9 @@ fn help(body: &mut Text) {
 		" r (remove): Delete the selected tissue".into(),
 		// The below should be moved to an "advanced" section should they reach ~3 or 4 buttons
 		" R (restore): Restore a deleted tissue".into(),
+		" / (slash): Search for a tissue".into(),
+		" n (next): Repeat the last search".into(),
+		" N (last): Repeat the last search, searching backwards".into(),
 		" * (star): Marks the tissue with a *.".into(),
 		"           Pressing * on a starred tissue removes the star,".into(),
 		"           and pressing * from any other tissue moves the cursor to the starred issue.".into(),
