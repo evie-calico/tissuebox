@@ -111,7 +111,7 @@ fn tui(mut terminal: DefaultTerminal, path: &Path, clipboard_daemon: Option<&Pat
 		})
 		.unwrap_or(Path::new("tissuebox"));
 	let title = format!(" {} ", title.display());
-	let mut index = 0;
+	let mut index = tissue_box.starred.unwrap_or(0);
 	let mut mode = Mode::Normal;
 	let mut last_error: Result<(), Error> = Ok(());
 	loop {
