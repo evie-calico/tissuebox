@@ -92,11 +92,11 @@ impl std::fmt::Display for Tissue {
 #[derive(Clone, Debug, Default, serde::Serialize, serde::Deserialize)]
 pub struct TissueBox {
 	#[serde(default)]
-	recycle_bin: Vec<Tissue>,
+	starred: Option<usize>,
 	#[serde(default)]
 	tissues: Vec<Tissue>,
 	#[serde(default)]
-	starred: Option<usize>,
+	recycle_bin: Vec<Tissue>,
 }
 
 impl TissueBox {
@@ -112,8 +112,7 @@ impl TissueBox {
 		self.tissues.push(Tissue { title, ..Default::default() })
 	}
 
-	#[must_use]
-	pub fn remove(&mut self, index: usize) -> Option<Tissue> {
+	pub fn remove(&mut self, index: usize) -> Option<()> {
 		// If this issue is starred, reset the star state.
 		if let Some(i) = self.starred {
 			if i == index {
@@ -121,9 +120,8 @@ impl TissueBox {
 			}
 		}
 		self.tissues.get(index)?;
-		let tissue = self.tissues.remove(index);
-		self.recycle_bin.push(tissue.clone());
-		Some(tissue)
+		self.recycle_bin.push(self.tissues.remove(index));
+		Some(())
 	}
 
 	pub fn restore(&mut self, index: usize) -> Option<&Tissue> {
