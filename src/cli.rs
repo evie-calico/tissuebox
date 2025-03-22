@@ -1,6 +1,10 @@
 use crate::prelude::*;
 use clap::{Args, Parser, Subcommand};
-use std::path::PathBuf;
+use std::{
+	ffi::{OsStr, OsString},
+	path::PathBuf,
+	process,
+};
 
 #[derive(Parser)]
 pub struct Cli {
@@ -28,6 +32,15 @@ pub enum Command {
 	Commit(Index),
 	/// Publish a tissue to GitHub by index
 	Publish(Index),
+
+	/// Handles unkown subcommands.
+	///
+	/// The first element of this vector will have `tissue-` prepended to it,
+	/// and then the entire vector will be executed.
+	///
+	/// If this execution fails, tissue will print "no such subcommand".
+	#[clap(external_subcommand)]
+	Custom(Vec<OsString>),
 }
 
 #[derive(Args)]
@@ -122,6 +135,10 @@ pub enum Error {
 	PublishFailed(io::Error),
 	#[error("list command specified without index")]
 	InvalidListCommand,
+	#[error("unrecognized subcommand")]
+	UnrecognizedSubcommand,
+	#[error("subcommand execution failed: {0}")]
+	SubcommandFailed(io::Error),
 }
 
 pub type Result<T, E = Error> = std::result::Result<T, E>;
@@ -209,12 +226,21 @@ pub fn run(command: Command, tissue_box: &mut TissueBox) -> Result<Option<String
 		}
 		Command::Commit(Index { index }) => {
 			tissue_box.get_mut(index).ok_or(Error::TissueNotFound(index))?.commit().map_err(Error::CommitFailed)?;
-			tissue_box.remove(index).expect("index used by get_mut");
+			tissue_box.remove(index);
 			Ok(None)
 		}
 		Command::Publish(Index { index }) => {
 			tissue_box.get_mut(index).ok_or(Error::TissueNotFound(index))?.publish().map_err(Error::PublishFailed)?;
-			tissue_box.remove(index).expect("index used by get_mut");
+			tissue_box.remove(index);
+			Ok(None)
+		}
+		Command::Custom(argv) => {
+			process::Command::new(OsString::from_iter([OsStr::new("tissue-"), argv[0].as_os_str()]))
+				.args(&argv[1..])
+				.spawn()
+				.map_err(|_| Error::UnrecognizedSubcommand)?
+				.wait()
+				.map_err(Error::SubcommandFailed)?;
 			Ok(None)
 		}
 	}
