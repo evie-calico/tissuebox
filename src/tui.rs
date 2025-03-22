@@ -145,7 +145,11 @@ fn tui(mut terminal: DefaultTerminal, path: &Path, clipboard_daemon: Option<&Pat
 				}
 			}
 			let paragraph_area = Rect { y: area.y + 4, height: area.height - 5, ..area };
-			frame.render_widget(Paragraph::new(body).block(block).scroll(((sum_lines(&tissue_box.tissues, index) as u16).saturating_sub(paragraph_area.height / 2 - 1), 0)), paragraph_area);
+			let mut paragraph = Paragraph::new(body).block(block);
+			if !matches!(mode, Mode::Help) {
+				paragraph = paragraph.scroll(((sum_lines(&tissue_box.tissues, index) as u16).saturating_sub(paragraph_area.height / 2 - 1), 0))
+			}
+			frame.render_widget(paragraph, paragraph_area);
 
 			// Errors
 			if let Err(msg) = &last_error {
