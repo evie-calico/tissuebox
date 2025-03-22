@@ -20,12 +20,16 @@ fn main() {
 	}
 	let cli = Cli::parse();
 
+	let mut input = cli.input;
+	if input.is_dir() {
+		input.push(".tissuebox");
+	}
 	// Update tissue box
 	match cli.command {
 		Some(command) => {
 			tracing_subscriber::fmt().without_time().init();
-			let mut tissue_box = TissueBox::open(&cli.input).unwrap_or_else(|msg| {
-				error!("failed to open {}: {msg}", cli.input.display());
+			let mut tissue_box = TissueBox::open(&input).unwrap_or_else(|msg| {
+				error!("failed to open {}: {msg}", input.display());
 				exit(1);
 			});
 
@@ -39,7 +43,7 @@ fn main() {
 			}
 			// cli::run can't manage saving because it needs to be run in unit tests,
 			// so just save after every run.
-			if let Err(msg) = tissue_box.save(&cli.input) {
+			if let Err(msg) = tissue_box.save(&input) {
 				error!("failed to serialize tissue box: {msg}");
 				exit(1);
 			};
@@ -52,7 +56,7 @@ fn main() {
 				let _ = crossterm::execute!(std::io::stdout(), crossterm::terminal::LeaveAlternateScreen);
 				original_hook(panic_info);
 			}));
-			if let Err(msg) = tissuebox::tui::run(&cli.input, env::current_exe().ok().as_deref()) {
+			if let Err(msg) = tissuebox::tui::run(&input, env::current_exe().ok().as_deref()) {
 				eprintln!("{msg}");
 				exit(1);
 			}
