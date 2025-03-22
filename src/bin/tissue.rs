@@ -23,7 +23,7 @@ fn main() {
 	// Update tissue box
 	match cli.command {
 		Some(command) => {
-			tracing_subscriber::fmt::init();
+			tracing_subscriber::fmt().without_time().init();
 			let mut tissue_box = TissueBox::open(&cli.input).unwrap_or_else(|msg| {
 				error!("failed to open {}: {msg}", cli.input.display());
 				exit(1);
