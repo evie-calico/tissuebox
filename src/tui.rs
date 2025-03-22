@@ -411,12 +411,12 @@ fn input(mode: Mode, code: KeyCode, index: &mut usize, tissue_box: &mut TissueBo
 	}
 }
 
-fn sum_lines(tissues: &[Tissue], index: usize) -> usize {
-	tissues.iter().take(index).fold(0, |a, b| a + 1 + b.description.len())
+fn sum_lines<'a>(tissues: impl IntoIterator<Item = &'a Tissue>, index: usize) -> usize {
+	tissues.into_iter().take(index).fold(0, |a, b| a + 1 + b.description.len())
 }
 
-fn format_tissues(body: &mut Text, tissues: &[Tissue], index: usize, starred: Option<usize>, description_index: Option<usize>) {
-	for (i, tissue) in tissues.iter().enumerate() {
+fn format_tissues<'a>(body: &mut Text, tissues: impl IntoIterator<Item = &'a Tissue>, index: usize, starred: Option<usize>, description_index: Option<usize>) {
+	for (i, tissue) in tissues.into_iter().enumerate() {
 		let mut title = Span::default();
 		title.content.to_mut().push(match starred {
 			Some(starred) if starred == i => '*',

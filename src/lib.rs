@@ -6,7 +6,11 @@ pub mod prelude {
 	pub use cli::Cli;
 }
 
-use std::{collections::HashSet, fs, io, path::Path};
+use std::{
+	collections::{HashSet, VecDeque},
+	fs, io,
+	path::Path,
+};
 
 pub const DAEMONIZE_ARG: &str = "__internal_daemonize";
 
@@ -96,7 +100,7 @@ pub struct TissueBox {
 	#[serde(default)]
 	tissues: Vec<Tissue>,
 	#[serde(default)]
-	recycle_bin: Vec<Tissue>,
+	recycle_bin: VecDeque<Tissue>,
 }
 
 impl TissueBox {
@@ -120,13 +124,12 @@ impl TissueBox {
 			}
 		}
 		self.tissues.get(index)?;
-		self.recycle_bin.push(self.tissues.remove(index));
+		self.recycle_bin.push_front(self.tissues.remove(index));
 		Some(())
 	}
 
 	pub fn restore(&mut self, index: usize) -> Option<&Tissue> {
-		self.recycle_bin.get(index)?;
-		self.tissues.push(self.recycle_bin.remove(index));
+		self.tissues.push(self.recycle_bin.remove(index)?);
 		self.tissues.last()
 	}
 
