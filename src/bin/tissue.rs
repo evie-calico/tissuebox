@@ -53,7 +53,7 @@ fn main() {
 				original_hook(panic_info);
 			}));
 			if let Err(msg) = tissuebox::tui::run(&cli.input, env::current_exe().ok().as_deref()) {
-				error!("{msg}");
+				eprintln!("{msg}");
 				exit(1);
 			}
 		}
