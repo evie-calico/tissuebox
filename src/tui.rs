@@ -299,6 +299,8 @@ fn input(mode: Mode, code: KeyCode, index: &mut usize, tissue_box: &mut TissueBo
 		Mode::Add(mut title) => {
 			if gather_line(&mut title, code) {
 				tissue_box.create(title);
+				// Focus new tissue
+				*index = tissue_box.tissues.len() - 1;
 				InputResult::Changed
 			} else {
 				Mode::Add(title).into()
