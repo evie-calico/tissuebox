@@ -12,6 +12,7 @@ use ratatui::{
 	DefaultTerminal,
 };
 use std::{
+	env,
 	io::{self, Write},
 	path::Path,
 	process,
@@ -100,6 +101,16 @@ fn tui(mut terminal: DefaultTerminal, path: &Path, clipboard_daemon: Option<&Pat
 		git_exclude.write_all("\n".as_bytes())?;
 	}
 
+	let title = std::path::absolute(path);
+	let title = title
+		.as_ref()
+		.ok()
+		.map(|x| {
+			let x = x.parent().unwrap_or(x);
+			env::var_os("HOME").and_then(|home| x.strip_prefix(home).ok()).unwrap_or(x)
+		})
+		.unwrap_or(Path::new("tissuebox"));
+	let title = format!(" {} ", title.display());
 	let mut index = 0;
 	let mut mode = Mode::Normal;
 	let mut last_error: Result<(), Error> = Ok(());
@@ -120,8 +131,7 @@ fn tui(mut terminal: DefaultTerminal, path: &Path, clipboard_daemon: Option<&Pat
 				Rect { height: 4, ..area },
 			);
 
-			// TissueBox
-			let title = Title::from(" tissuebox ".red().bold());
+			let title = Title::from(title.as_str().red().bold());
 			let instructions = instructions(&mode);
 			let block = Block::bordered()
 				.title(title.alignment(Alignment::Center))
