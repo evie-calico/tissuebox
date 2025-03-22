@@ -130,25 +130,27 @@ fn tui(mut terminal: DefaultTerminal, path: &Path, clipboard_daemon: Option<&Pat
 				.border_set(border::ROUNDED);
 
 			let mut body = Text::default();
-			match &mode {
+			let paragraph_area = Rect { y: area.y + 4, height: area.height - 5, ..area };
+			let scroll = |index| (sum_lines(&tissue_box.tissues, index) as u16).saturating_sub(paragraph_area.height / 2 - 1);
+			let scroll = match &mode {
 				Mode::Help => {
 					help(&mut body);
+					(0, 0)
 				}
 				Mode::Restore(index) => {
 					format_tissues(&mut body, &tissue_box.recycle_bin, *index, None, None);
+					((sum_lines(&tissue_box.recycle_bin, *index) as u16).saturating_sub(paragraph_area.height / 2 - 1), 0)
 				}
 				Mode::RemoveDescription(description_index) => {
 					format_tissues(&mut body, &tissue_box.tissues, index, tissue_box.starred, Some(*description_index));
+					(scroll(index), 0)
 				}
 				_ => {
 					format_tissues(&mut body, &tissue_box.tissues, index, tissue_box.starred, None);
+					(scroll(index), 0)
 				}
-			}
-			let paragraph_area = Rect { y: area.y + 4, height: area.height - 5, ..area };
-			let mut paragraph = Paragraph::new(body).block(block);
-			if !matches!(mode, Mode::Help) {
-				paragraph = paragraph.scroll(((sum_lines(&tissue_box.tissues, index) as u16).saturating_sub(paragraph_area.height / 2 - 1), 0))
-			}
+			};
+			let paragraph = Paragraph::new(body).block(block).scroll(scroll);
 			frame.render_widget(paragraph, paragraph_area);
 
 			// Errors
