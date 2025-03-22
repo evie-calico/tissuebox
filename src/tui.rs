@@ -427,7 +427,16 @@ fn format_tissues(body: &mut Text, tissues: &[Tissue], index: usize, starred: Op
 		};
 		let mut title: Line = title.into();
 		for tag in &tissue.tags {
-			title.spans.push(format!(" ({tag})").magenta());
+			let s = format!(" ({tag})");
+			let s = match tag.bytes().fold(0u8, |a, b| a.wrapping_add(b)) % 6 {
+				0 => s.light_red(),
+				1 => s.light_green(),
+				2 => s.light_yellow(),
+				3 => s.light_blue(),
+				4 => s.light_magenta(),
+				_ => s.light_cyan(),
+			};
+			title.spans.push(s);
 		}
 		body.lines.push(title);
 		for (di, description) in tissue.description.iter().enumerate() {
